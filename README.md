@@ -70,7 +70,7 @@ asyncio.run(main())
 
 ## Demo Notebook
 
-See [demo.ipynb](demo.ipynb) for a demo notebook.
+See [demo.ipynb](src/demo.ipynb) for a demo notebook.
 
 ## Development
 
