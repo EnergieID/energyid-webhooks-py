@@ -9,6 +9,18 @@ class MeterCatalog:
     def meter_types(self) -> List[str]:
         return [meter['meterType'] for meter in self.meters]
     
+    @property
+    def all_metrics(self) -> List[str]:
+        return list(set([metric for meter in self.meters for metric in meter['metrics'].keys()]))
+    
+    @property
+    def all_units(self) -> List[str]:
+        return list(set([unit for meter in self.meters for metric in meter['metrics'].keys() for unit in meter['metrics'][metric]['units']]))
+    
+    @property
+    def all_reading_types(self) -> List[str]:
+        return list(set([reading_type for meter in self.meters for metric in meter['metrics'].keys() for reading_type in meter['metrics'][metric]['readingTypes']]))
+    
     def metrics(self, meter_type: str) -> List[Dict]:
         return [meter['metrics'] for meter in self.meters if meter['meterType'] == meter_type][0]
     
