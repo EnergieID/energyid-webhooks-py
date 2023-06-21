@@ -32,3 +32,6 @@ class WebhookPayload:
             interval=d['interval'],
             data=d['data']
         )
+    
+    def __repr__(self):
+        return str(self.to_dict())
