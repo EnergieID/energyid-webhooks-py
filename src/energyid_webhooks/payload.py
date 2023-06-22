@@ -1,37 +1,45 @@
+"""Object representation of the payload that is sent to the webhook."""
+
+from dataclasses import dataclass
 from typing import Dict, List
 
+
+@dataclass
 class WebhookPayload:
-    def __init__(self, remote_id: str, remote_name: str, metric: str, metric_kind: str, unit: str, interval: str, data: List[List]):
-        self.remote_id = remote_id
-        self.remote_name = remote_name
-        self.metric = metric
-        self.metric_kind = metric_kind
-        self.unit = unit
-        self.interval = interval
-        self.data = data
+    """Object representation of the payload that is sent to the webhook."""
+
+    remote_id: str
+    remote_name: str
+    metric: str
+    metric_kind: str
+    unit: str
+    interval: str
+    data: List[List]
 
     def to_dict(self) -> Dict:
+        """Convert the payload to a dictionary."""
         return {
-            'remoteId': self.remote_id,
-            'remoteName': self.remote_name,
-            'metric': self.metric,
-            'metricKind': self.metric_kind,
-            'unit': self.unit,
-            'interval': self.interval,
-            'data': self.data
+            "remoteId": self.remote_id,
+            "remoteName": self.remote_name,
+            "metric": self.metric,
+            "metricKind": self.metric_kind,
+            "unit": self.unit,
+            "interval": self.interval,
+            "data": self.data,
         }
-    
+
     @classmethod
-    def from_dict(cls, d: Dict):
+    def from_dict(cls, data: Dict) -> "WebhookPayload":
+        """Create a payload from a dictionary."""
         return cls(
-            remote_id=d['remoteId'],
-            remote_name=d['remoteName'],
-            metric=d['metric'],
-            metric_kind=d['metricKind'],
-            unit=d['unit'],
-            interval=d['interval'],
-            data=d['data']
+            remote_id=data["remoteId"],
+            remote_name=data["remoteName"],
+            metric=data["metric"],
+            metric_kind=data["metricKind"],
+            unit=data["unit"],
+            interval=data["interval"],
+            data=data["data"],
         )
-    
-    def __repr__(self):
+
+    def __repr__(self) -> str:
         return str(self.to_dict())

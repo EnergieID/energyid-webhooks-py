@@ -1,43 +1,53 @@
+"""Objects for representing webhook policies."""
+
 from typing import Dict, List
 
+
 class WebhookPolicy:
-    def __init__(self, policy: Dict):
+    """Object representation of a webhook policy."""
+
+    def __init__(self, policy: Dict) -> None:
         self.policy = policy
-    
+
     @property
     def allowed_metrics(self) -> List[str]:
-        return self.policy['allowedMetrics']
-    
+        """Get the allowed metrics for this policy."""
+        return self.policy["allowedMetrics"]
+
     @property
     def allowed_interval(self) -> str:
-        return self.policy['allowedInterval']
-    
+        """Get the shortest allowed interval for this policy."""
+        return self.policy["allowedInterval"]
+
     @property
     def description(self) -> str:
-        return self.policy['description']
-    
+        """Get the description of this policy."""
+        return self.policy["description"]
+
     @property
     def display_name(self) -> str:
-        return self.policy['displayName']
-    
+        """Get the display name of this policy."""
+        return self.policy["displayName"]
+
     def __repr__(self):
         return str(self.policy)
-    
+
     def __str__(self):
         return self.__repr__()
-    
+
     def __eq__(self, other):
         return self.policy == other.policy
-    
+
     def __ne__(self, other):
         return not self.__eq__(other)
-    
+
     def __hash__(self):
         return hash(self.policy)
-    
+
     def to_dict(self) -> Dict:
+        """Convert the policy to a dictionary."""
         return self.policy
-    
+
     @property
     def allowed_intervals(self) -> List[str]:
         """
@@ -49,7 +59,8 @@ class WebhookPolicy:
             PT15M - quarter-hourly
             PT5M - five-minute
 
-        The policy allows all intervals that are higher up the list than the allowed interval.
+        The policy allows all intervals that are higher
+        than the allowed interval.
         """
-        intervals = ['P1M', 'P1D', 'PT1H', 'PT15M', 'PT5M']
-        return intervals[:intervals.index(self.allowed_interval)+1]
+        intervals = ["P1M", "P1D", "PT1H", "PT15M", "PT5M"]
+        return intervals[: intervals.index(self.allowed_interval) + 1]
