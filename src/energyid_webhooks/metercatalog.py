@@ -32,3 +32,6 @@ class MeterCatalog:
     
     def metric_reading_types(self, meter_type: str, metric: str) -> List[str]:
         return self.metrics(meter_type)[metric]['readingTypes']
+
+    def __repr__(self):
+        return str(self.meters)
