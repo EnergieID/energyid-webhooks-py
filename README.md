@@ -5,6 +5,8 @@ Light weight Python package to interface with EnergyID Webhooks
 ```bash
 pip install energyid-webhooks
 ```
+## Type Checking
+This package is fully type-hinted and checked with strict mypy settings.
 
 ## Usage
 

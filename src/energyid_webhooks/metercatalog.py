@@ -1,10 +1,12 @@
 """Meter catalog module."""
 
+from typing import Any, cast
+
 
 class MeterCatalog:
     """Meter catalog object."""
 
-    def __init__(self, meters: list[dict]) -> None:
+    def __init__(self, meters: list[dict[str, Any]]) -> None:
         self.meters = meters
 
     @property
@@ -26,8 +28,8 @@ class MeterCatalog:
             {
                 unit
                 for meter in self.meters
-                for metric in meter["metrics"].keys()
-                for unit in meter["metrics"][metric]["units"]
+                for metric in meter["metrics"].values()
+                for unit in metric["units"]
             }
         )
 
@@ -38,18 +40,22 @@ class MeterCatalog:
             {
                 reading_type
                 for meter in self.meters
-                for metric in meter["metrics"].keys()
-                for reading_type in meter["metrics"][metric]["readingTypes"]
+                for metric in meter["metrics"].values()
+                for reading_type in metric["readingTypes"]
             }
         )
 
-    def metrics(self, meter_type: str) -> list[dict]:
+    def metrics(self, meter_type: str) -> dict[str, Any]:
         """Get the metrics for a meter type."""
-        return [
+        matching_meters = [
             meter["metrics"]
             for meter in self.meters
             if meter["meterType"] == meter_type
-        ][0]
+        ]
+        if not matching_meters:
+            raise ValueError(f"No meter found with type {meter_type}")
+        # Use cast to ensure the return type matches the declaration
+        return cast(dict[str, Any], matching_meters[0])
 
     def metric_names(self, meter_type: str) -> list[str]:
         """Get the metric names for a meter type."""
@@ -57,11 +63,14 @@ class MeterCatalog:
 
     def metric_units(self, meter_type: str, metric: str) -> list[str]:
         """Get the metric units for a meter type and metric."""
-        return self.metrics(meter_type)[metric]["units"]
+        metrics_dict = self.metrics(meter_type)
+        # Use cast to ensure we return List[str]
+        return cast(list[str], metrics_dict[metric]["units"])
 
     def metric_reading_types(self, meter_type: str, metric: str) -> list[str]:
         """Get the metric reading types for a meter type and metric."""
-        return self.metrics(meter_type)[metric]["readingTypes"]
+        metrics_dict = self.metrics(meter_type)
+        return cast(list[str], metrics_dict[metric]["readingTypes"])
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return str(self.meters)

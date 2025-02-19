@@ -1,6 +1,7 @@
 """Clients for the EnergyID Webhooks API."""
 
 from abc import ABC
+from typing import Any
 
 import aiohttp
 import requests
@@ -10,7 +11,7 @@ from .payload import WebhookPayload
 from .webhookpolicy import WebhookPolicy
 
 
-class BaseClient(ABC):  # pylint: disable=too-few-public-methods
+class BaseClient(ABC):
     """Base client for the EnergyID Webhooks API."""
 
     meter_catalog_url = "https://api.energyid.eu/api/v1/catalogs/meters"
@@ -23,8 +24,8 @@ class BaseClient(ABC):  # pylint: disable=too-few-public-methods
         self.webhook_url = webhook_url
         self.session = session
 
-        self._meter_catalog = None
-        self._webhook_policy = None
+        self._meter_catalog: MeterCatalog | None = None
+        self._webhook_policy: WebhookPolicy | None = None
 
 
 class WebhookClient(BaseClient):
@@ -33,11 +34,11 @@ class WebhookClient(BaseClient):
     def __init__(
         self, webhook_url: str, session: requests.Session | None = None
     ) -> None:
-        session = session if session is not None else requests.Session()
-        super().__init__(webhook_url=webhook_url, session=session)
+        self.session = session if session is not None else requests.Session()
+        super().__init__(webhook_url=webhook_url, session=self.session)
 
     @property
-    def policy(self) -> dict:
+    def policy(self) -> WebhookPolicy:
         """Get the webhook policy."""
         if self._webhook_policy is None:
             self._webhook_policy = self.get_policy()
@@ -45,13 +46,16 @@ class WebhookClient(BaseClient):
 
     def get_policy(self) -> WebhookPolicy:
         """Get the webhook policy."""
+        if not isinstance(self.session, requests.Session):
+            raise RuntimeError("Session not initialized")
         request = self.session.get(url=self.webhook_url)
         request.raise_for_status()
-        self._webhook_policy = WebhookPolicy(request.json())
-        return self._webhook_policy
+        return WebhookPolicy(request.json())
 
-    def post(self, data: dict) -> None:
+    def post(self, data: dict[str, Any]) -> None:
         """Post data to the webhook."""
+        if not isinstance(self.session, requests.Session):
+            raise RuntimeError("Session not initialized")
         request = self.session.post(url=self.webhook_url, json=data)
         request.raise_for_status()
 
@@ -64,11 +68,13 @@ class WebhookClient(BaseClient):
 
     def get_meter_catalog(self) -> MeterCatalog:
         """Get the meter catalog."""
+        if not isinstance(self.session, requests.Session):
+            raise RuntimeError("Session not initialized")
         request = self.session.get(url=self.meter_catalog_url)
         request.raise_for_status()
         return MeterCatalog(request.json())
 
-    def post_payload(self, payload: WebhookPayload):
+    def post_payload(self, payload: WebhookPayload) -> None:
         """Post a webhook payload."""
         self.post(payload.to_dict())
 
@@ -79,11 +85,11 @@ class WebhookClientAsync(BaseClient):
     def __init__(
         self, webhook_url: str, session: aiohttp.ClientSession | None = None
     ) -> None:
-        session = session if session is not None else aiohttp.ClientSession()
-        super().__init__(webhook_url=webhook_url, session=session)
+        self.session = session if session is not None else aiohttp.ClientSession()
+        super().__init__(webhook_url=webhook_url, session=self.session)
 
     @property
-    async def policy(self) -> dict:
+    async def policy(self) -> WebhookPolicy:
         """Get the webhook policy."""
         if self._webhook_policy is None:
             self._webhook_policy = await self.get_policy()
@@ -91,19 +97,23 @@ class WebhookClientAsync(BaseClient):
 
     async def get_policy(self) -> WebhookPolicy:
         """Get the webhook policy."""
+        if not isinstance(self.session, aiohttp.ClientSession):
+            raise RuntimeError("Session not initialized")
         async with self.session.get(url=self.webhook_url) as request:
             request.raise_for_status()
-            self._webhook_policy = WebhookPolicy(await request.json())
-            return self._webhook_policy
+            return WebhookPolicy(await request.json())
 
-    async def post(self, data: dict) -> None:
+    async def post(self, data: dict[str, Any]) -> None:
         """Post data to the webhook."""
+        if not isinstance(self.session, aiohttp.ClientSession):
+            raise RuntimeError("Session not initialized")
         async with self.session.post(url=self.webhook_url, json=data) as request:
             request.raise_for_status()
-            return
 
     async def get_meter_catalog(self) -> MeterCatalog:
         """Get the meter catalog."""
+        if not isinstance(self.session, aiohttp.ClientSession):
+            raise RuntimeError("Session not initialized")
         async with self.session.get(url=self.meter_catalog_url) as request:
             request.raise_for_status()
             data = await request.json()
@@ -116,6 +126,6 @@ class WebhookClientAsync(BaseClient):
             self._meter_catalog = await self.get_meter_catalog()
         return self._meter_catalog
 
-    async def post_payload(self, payload: WebhookPayload):
+    async def post_payload(self, payload: WebhookPayload) -> None:
         """Post a webhook payload."""
         await self.post(payload.to_dict())
