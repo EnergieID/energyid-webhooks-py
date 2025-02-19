@@ -1,28 +1,26 @@
 """Meter catalog module."""
 
-from typing import Dict, List
-
 
 class MeterCatalog:
     """Meter catalog object."""
 
-    def __init__(self, meters: List[Dict]) -> None:
+    def __init__(self, meters: list[dict]) -> None:
         self.meters = meters
 
     @property
-    def meter_types(self) -> List[str]:
+    def meter_types(self) -> list[str]:
         """Get the meter types in the catalog."""
         return [meter["meterType"] for meter in self.meters]
 
     @property
-    def all_metrics(self) -> List[str]:
+    def all_metrics(self) -> list[str]:
         """Get all metrics in the catalog."""
         return list(
             {metric for meter in self.meters for metric in meter["metrics"].keys()}
         )
 
     @property
-    def all_units(self) -> List[str]:
+    def all_units(self) -> list[str]:
         """Get all units in the catalog."""
         return list(
             {
@@ -34,7 +32,7 @@ class MeterCatalog:
         )
 
     @property
-    def all_reading_types(self) -> List[str]:
+    def all_reading_types(self) -> list[str]:
         """Get all reading types in the catalog."""
         return list(
             {
@@ -45,7 +43,7 @@ class MeterCatalog:
             }
         )
 
-    def metrics(self, meter_type: str) -> List[Dict]:
+    def metrics(self, meter_type: str) -> list[dict]:
         """Get the metrics for a meter type."""
         return [
             meter["metrics"]
@@ -53,15 +51,15 @@ class MeterCatalog:
             if meter["meterType"] == meter_type
         ][0]
 
-    def metric_names(self, meter_type: str) -> List[str]:
+    def metric_names(self, meter_type: str) -> list[str]:
         """Get the metric names for a meter type."""
         return list(self.metrics(meter_type).keys())
 
-    def metric_units(self, meter_type: str, metric: str) -> List[str]:
+    def metric_units(self, meter_type: str, metric: str) -> list[str]:
         """Get the metric units for a meter type and metric."""
         return self.metrics(meter_type)[metric]["units"]
 
-    def metric_reading_types(self, meter_type: str, metric: str) -> List[str]:
+    def metric_reading_types(self, meter_type: str, metric: str) -> list[str]:
         """Get the metric reading types for a meter type and metric."""
         return self.metrics(meter_type)[metric]["readingTypes"]
 

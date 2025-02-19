@@ -1,16 +1,14 @@
 """Objects for representing webhook policies."""
 
-from typing import Dict, List
-
 
 class WebhookPolicy:
     """Object representation of a webhook policy."""
 
-    def __init__(self, policy: Dict) -> None:
+    def __init__(self, policy: dict) -> None:
         self.policy = policy
 
     @property
-    def allowed_metrics(self) -> List[str]:
+    def allowed_metrics(self) -> list[str]:
         """Get the allowed metrics for this policy."""
         return self.policy["allowedMetrics"]
 
@@ -44,12 +42,12 @@ class WebhookPolicy:
     def __hash__(self):
         return hash(self.policy)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Convert the policy to a dictionary."""
         return self.policy
 
     @property
-    def allowed_intervals(self) -> List[str]:
+    def allowed_intervals(self) -> list[str]:
         """
         Returns a list of allowed intervals for this policy.
         The list is

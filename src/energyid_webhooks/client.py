@@ -1,7 +1,6 @@
 """Clients for the EnergyID Webhooks API."""
 
 from abc import ABC
-from typing import Dict, Optional, Union
 
 import aiohttp
 import requests
@@ -19,7 +18,7 @@ class BaseClient(ABC):  # pylint: disable=too-few-public-methods
     def __init__(
         self,
         webhook_url: str,
-        session: Optional[Union[requests.Session, aiohttp.ClientSession]] = None,
+        session: requests.Session | aiohttp.ClientSession | None = None,
     ) -> None:
         self.webhook_url = webhook_url
         self.session = session
@@ -32,13 +31,13 @@ class WebhookClient(BaseClient):
     """Client for the EnergyID Webhooks API."""
 
     def __init__(
-        self, webhook_url: str, session: Optional[requests.Session] = None
+        self, webhook_url: str, session: requests.Session | None = None
     ) -> None:
         session = session if session is not None else requests.Session()
         super().__init__(webhook_url=webhook_url, session=session)
 
     @property
-    def policy(self) -> Dict:
+    def policy(self) -> dict:
         """Get the webhook policy."""
         if self._webhook_policy is None:
             self._webhook_policy = self.get_policy()
@@ -51,7 +50,7 @@ class WebhookClient(BaseClient):
         self._webhook_policy = WebhookPolicy(request.json())
         return self._webhook_policy
 
-    def post(self, data: Dict) -> None:
+    def post(self, data: dict) -> None:
         """Post data to the webhook."""
         request = self.session.post(url=self.webhook_url, json=data)
         request.raise_for_status()
@@ -78,13 +77,13 @@ class WebhookClientAsync(BaseClient):
     """Async client for the EnergyID Webhooks API."""
 
     def __init__(
-        self, webhook_url: str, session: Optional[aiohttp.ClientSession] = None
+        self, webhook_url: str, session: aiohttp.ClientSession | None = None
     ) -> None:
         session = session if session is not None else aiohttp.ClientSession()
         super().__init__(webhook_url=webhook_url, session=session)
 
     @property
-    async def policy(self) -> Dict:
+    async def policy(self) -> dict:
         """Get the webhook policy."""
         if self._webhook_policy is None:
             self._webhook_policy = await self.get_policy()
@@ -97,7 +96,7 @@ class WebhookClientAsync(BaseClient):
             self._webhook_policy = WebhookPolicy(await request.json())
             return self._webhook_policy
 
-    async def post(self, data: Dict) -> None:
+    async def post(self, data: dict) -> None:
         """Post data to the webhook."""
         async with self.session.post(url=self.webhook_url, json=data) as request:
             request.raise_for_status()

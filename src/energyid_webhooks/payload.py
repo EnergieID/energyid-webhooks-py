@@ -1,7 +1,6 @@
 """Object representation of the payload that is sent to the webhook."""
 
 from dataclasses import dataclass
-from typing import Dict, List
 
 
 @dataclass
@@ -14,9 +13,9 @@ class WebhookPayload:
     metric_kind: str
     unit: str
     interval: str
-    data: List[List]
+    data: list[list]
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Convert the payload to a dictionary."""
         return {
             "remoteId": self.remote_id,
@@ -29,7 +28,7 @@ class WebhookPayload:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict) -> "WebhookPayload":
+    def from_dict(cls, data: dict) -> "WebhookPayload":
         """Create a payload from a dictionary."""
         return cls(
             remote_id=data["remoteId"],
