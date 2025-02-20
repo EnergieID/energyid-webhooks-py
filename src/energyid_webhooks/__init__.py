@@ -1,6 +1,12 @@
 """EnergyID Webhooks API Client."""
 
-__version__ = "0.0.6"
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("energyid-webhooks")
+except PackageNotFoundError:
+    pass  # package is not installed
+
 from .client import WebhookClient, WebhookClientAsync
 
 __all__ = ["WebhookClient", "WebhookClientAsync", "WebhookPayload"]

@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=64", "wheel", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "energyid-webhooks"
-version = "0.0.7"
+dynamic = ["version"]
 authors = [
     {name = "Jan Pecinovsky", email = "jan@energieid.be"},
     {name = "Oscar Swyns", email = "oscar@energieid.be"}
@@ -31,6 +31,9 @@ dependencies = [
     "aiohttp>=3.11.12",
     "requests>=2.32.3",
 ]
+
+[tool.setuptools_scm]
+version_file = "src/energyid_webhooks/_version.py"
 
 [project.urls]
 "Homepage" = "https://github.com/EnergieID/energyid-webhooks-py"
