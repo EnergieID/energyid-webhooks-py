@@ -27,6 +27,10 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed"
 ]
+dependencies = [
+    "aiohttp>=3.11.12",
+    "requests>=2.32.3",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/EnergieID/energyid-webhooks-py"
