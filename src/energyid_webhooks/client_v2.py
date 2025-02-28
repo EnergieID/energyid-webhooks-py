@@ -311,27 +311,36 @@ class WebhookClient:
             await self.authenticate()
             return bool(self.is_claimed)
 
-        # Check if token is about to expire or if we should reauthorize proactively
+        # If device is not claimed, nothing more to do
+        if not self.is_claimed:
+            return False
+
+        # Check if token needs refreshing
         now = dt.datetime.now(dt.timezone.utc)
         should_reauth = False
 
-        # Calculate when we should proactively refresh based on the reauth_interval
-        if self.auth_valid_until is not None:
-            # Refresh when we're within 1 hour of the configured reauth_interval
-            reauth_time = self.auth_valid_until - dt.timedelta(
-                hours=self.reauth_interval
-            )
-            should_reauth = now >= reauth_time - dt.timedelta(hours=1)
-        else:
+        if self.auth_valid_until is None:
             # No valid_until time, consider it expired
             should_reauth = True
+        else:
+            # Calculate how many hours remain before token expires
+            hours_until_expiration = (
+                self.auth_valid_until - now
+            ).total_seconds() / 3600
 
-        if self.is_claimed and should_reauth:
-            # Re-authenticate to refresh token
-            _LOGGER.info(
-                "Proactively refreshing token based on reauth_interval of %d hours",
-                self.reauth_interval,
-            )
+            # Set a reasonable threshold - reauth when less than 6 hours remain
+            # This gives plenty of buffer while avoiding too frequent refreshes
+            reauth_threshold = 6  # hours
+            should_reauth = hours_until_expiration <= reauth_threshold
+
+            if should_reauth:
+                _LOGGER.info(
+                    "Token will expire in %.1f hours, refreshing now (threshold: %d hours)",
+                    hours_until_expiration,
+                    reauth_threshold,
+                )
+
+        if should_reauth:
             await self.authenticate()
 
         return bool(self.is_claimed)
