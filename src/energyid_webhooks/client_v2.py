@@ -7,7 +7,7 @@ which allows sending measurement data from sensors to EnergyID.
 import asyncio
 import datetime as dt
 import logging
-from typing import Any, Dict, List, Optional, Set, TypeVar, Union, cast
+from typing import Any, Optional, TypeVar, Union, cast
 
 from aiohttp import ClientSession
 
@@ -33,12 +33,12 @@ class Sensor:
         self.webhook_client = webhook_client
 
         # State
-        self.value: Optional[ValueType] = None
-        self.timestamp: Optional[dt.datetime] = None
-        self.last_update_time: Optional[dt.datetime] = None
+        self.value: ValueType | None = None
+        self.timestamp: dt.datetime | None = None
+        self.last_update_time: dt.datetime | None = None
         self.value_uploaded = False
 
-    def update(self, value: ValueType, timestamp: Optional[dt.datetime] = None) -> None:
+    def update(self, value: ValueType, timestamp: dt.datetime | None = None) -> None:
         """Update the sensor value.
 
         Args:
@@ -66,12 +66,12 @@ class WebhookClient:
         client_secret: str,
         device_id: str,
         device_name: str,
-        firmware_version: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        mac_address: Optional[str] = None,
-        local_device_url: Optional[str] = None,
-        session: Optional[ClientSession] = None,
-        auto_sync_interval: Optional[int] = None,
+        firmware_version: str | None = None,
+        ip_address: str | None = None,
+        mac_address: str | None = None,
+        local_device_url: str | None = None,
+        session: ClientSession | None = None,
+        auto_sync_interval: int | None = None,
         reauth_interval: int = 24,  # Default to 24 hours as recommended
     ) -> None:
         """Initialize the webhook client.
@@ -104,26 +104,26 @@ class WebhookClient:
         self.session = session or ClientSession()
 
         # Authentication state
-        self.is_claimed: Optional[bool] = None
-        self.webhook_url: Optional[str] = None
-        self.headers: Optional[Dict[str, str]] = None
-        self.webhook_policy: Optional[Dict[str, Any]] = None
-        self.auth_valid_until: Optional[dt.datetime] = None
-        self.claim_code: Optional[str] = None
-        self.claim_url: Optional[str] = None
-        self.claim_code_valid_until: Optional[dt.datetime] = None
+        self.is_claimed: bool | None = None
+        self.webhook_url: str | None = None
+        self.headers: dict[str, str] | None = None
+        self.webhook_policy: dict[str, Any] | None = None
+        self.auth_valid_until: dt.datetime | None = None
+        self.claim_code: str | None = None
+        self.claim_url: str | None = None
+        self.claim_code_valid_until: dt.datetime | None = None
         self.reauth_interval: int = reauth_interval
 
         # Sensors
-        self.sensors: Dict[str, Sensor] = {}
-        self.updated_sensors: Set[str] = set()
-        self.last_sync_time: Optional[dt.datetime] = None
+        self.sensors: dict[str, Sensor] = {}
+        self.updated_sensors: set[str] = set()
+        self.last_sync_time: dt.datetime | None = None
 
         # Lock for data upload
         self._upload_lock = asyncio.Lock()
 
         # Auto-sync
-        self._auto_sync_task: Optional[asyncio.Task[None]] = None
+        self._auto_sync_task: asyncio.Task[None] | None = None
         if auto_sync_interval:
             self.start_auto_sync(auto_sync_interval)
 
@@ -152,7 +152,7 @@ class WebhookClient:
         return sensor
 
     def update_sensor(
-        self, sensor_id: str, value: ValueType, timestamp: Optional[dt.datetime] = None
+        self, sensor_id: str, value: ValueType, timestamp: dt.datetime | None = None
     ) -> None:
         """Update a sensor's value.
 
@@ -208,7 +208,7 @@ class WebhookClient:
             True if device is claimed, False otherwise
         """
         # Prepare the device provisioning payload
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "deviceId": self.device_id,
             "deviceName": self.device_name,
         }
@@ -274,7 +274,7 @@ class WebhookClient:
 
                 return False
 
-    def get_claim_info(self) -> Dict[str, Any]:
+    def get_claim_info(self) -> dict[str, Any]:
         """Get information needed to claim the device.
 
         Returns:
@@ -336,7 +336,7 @@ class WebhookClient:
 
         return bool(self.is_claimed)
 
-    async def send_data(self, data_points: Dict[str, Any]) -> Optional[str]:
+    async def send_data(self, data_points: dict[str, Any]) -> str | None:
         """Send data points to EnergyID.
 
         Args:
@@ -406,9 +406,9 @@ class WebhookClient:
 
     async def send_batch_data(
         self,
-        metrics_data: Dict[str, Union[ValueType, dt.datetime]],
-        timestamp: Optional[Union[dt.datetime, int]] = None,
-    ) -> Optional[str]:
+        metrics_data: dict[str, ValueType | dt.datetime],
+        timestamp: dt.datetime | int | None = None,
+    ) -> str | None:
         """Send multiple metrics in a single request.
 
         Args:
@@ -419,7 +419,7 @@ class WebhookClient:
             Response from the server
         """
         # Create payload
-        payload: Dict[str, Any] = dict(metrics_data)  # Make a copy
+        payload: dict[str, Any] = dict(metrics_data)  # Make a copy
 
         # Add timestamp if provided or use current time
         if timestamp:
@@ -433,7 +433,7 @@ class WebhookClient:
 
         return await self.send_data(payload)
 
-    async def synchronize_sensors(self) -> Optional[str]:
+    async def synchronize_sensors(self) -> str | None:
         """Synchronize all updated sensors to EnergyID.
 
         Returns:
@@ -449,7 +449,7 @@ class WebhookClient:
         # Lock to prevent concurrent uploads
         async with self._upload_lock:
             # Group sensors by timestamp rounded to the nearest second
-            sensors_by_time: Dict[int, List[Sensor]] = {}
+            sensors_by_time: dict[int, list[Sensor]] = {}
 
             for sensor_id in list(self.updated_sensors):
                 sensor = self.sensors[sensor_id]
@@ -464,9 +464,9 @@ class WebhookClient:
                 sensors_by_time[ts_second].append(sensor)
 
             # Create data points for each time group and send them
-            responses: List[str] = []
+            responses: list[str] = []
             for ts_second, sensors in sensors_by_time.items():
-                data_points: Dict[str, Any] = {"ts": ts_second}
+                data_points: dict[str, Any] = {"ts": ts_second}
 
                 for sensor in sensors:
                     if sensor.value is not None:
