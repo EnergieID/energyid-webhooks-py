@@ -1,14 +1,22 @@
-"""Clients for the EnergyID Webhooks API."""
+"""Clients for the EnergyID Webhooks API (V1)."""
 
 from abc import ABC
 from typing import Any
 
 import aiohttp
 import requests
-
+import warnings
 from .metercatalog import MeterCatalog
 from .payload import WebhookPayload
 from .webhookpolicy import WebhookPolicy
+
+warnings.warn(
+    "The V1 WebhookClient is deprecated. Please use the new WebhookClient from "
+    "energyid_webhooks import WebhookClient for V2 API support with device "
+    "provisioning and authentication.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class BaseClient(ABC):
