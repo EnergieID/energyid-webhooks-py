@@ -117,7 +117,7 @@ asyncio.run(main())
 
 ## Demo Notebook
 
-See [energyid_webhook_demo.ipynb](demo/energyid_webhook_demo.ipynb) for a complete V2 API demo.
+See [energyid_webhook_demo.ipynb](demos/energyid_webhook_demo.ipynb) for a complete V2 API demo.
 
 ## Development
 
