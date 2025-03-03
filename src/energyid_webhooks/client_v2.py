@@ -6,10 +6,12 @@ which allows sending measurement data from sensors to EnergyID.
 
 import asyncio
 import datetime as dt
+from itertools import groupby
 import logging
-from typing import Any, Optional, TypeVar, Union, cast
+from typing import Any, TypeVar, Union, cast
 
-from aiohttp import ClientSession
+from aiohttp import ClientSession, ClientError
+import backoff
 
 _LOGGER = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -20,23 +22,22 @@ ValueType = Union[float, int, str]
 class Sensor:
     """Represents a sensor that can send measurements to EnergyID."""
 
-    def __init__(
-        self, sensor_id: str, webhook_client: Optional["WebhookClient"] = None
-    ) -> None:
+    def __init__(self, sensor_id: str) -> None:
         """Initialize a sensor.
 
         Args:
             sensor_id: Unique identifier for the sensor
-            webhook_client: Optional webhook client this sensor belongs to
         """
         self.sensor_id = sensor_id
-        self.webhook_client = webhook_client
 
         # State
         self.value: ValueType | None = None
         self.timestamp: dt.datetime | None = None
         self.last_update_time: dt.datetime | None = None
         self.value_uploaded = False
+
+    def __repr__(self):
+        return f"Sensor(sensor_id={self.sensor_id}, value={self.value}, timestamp={self.timestamp}, last_update_time={self.last_update_time}, value_uploaded={self.value_uploaded})"
 
     def update(self, value: ValueType, timestamp: dt.datetime | None = None) -> None:
         """Update the sensor value.
@@ -49,10 +50,6 @@ class Sensor:
         self.timestamp = timestamp or dt.datetime.now(dt.timezone.utc)
         self.last_update_time = dt.datetime.now(dt.timezone.utc)
         self.value_uploaded = False
-
-        # Notify client if available
-        if self.webhook_client:
-            self.webhook_client.notify_sensor_update(self)
 
 
 class WebhookClient:
@@ -115,8 +112,7 @@ class WebhookClient:
         self.reauth_interval: int = reauth_interval
 
         # Sensors
-        self.sensors: dict[str, Sensor] = {}
-        self.updated_sensors: set[str] = set()
+        self.sensors: list[Sensor] = []
         self.last_sync_time: dt.datetime | None = None
 
         # Lock for data upload
@@ -135,23 +131,32 @@ class WebhookClient:
         """Exit context manager."""
         await self.close()
 
-    def add_sensor(self, sensor_id: str) -> Sensor:
+    @property
+    def updated_sensors(self) -> list[Sensor]:
+        """List of sensors that have not yet been uploaded."""
+        return [sensor for sensor in self.sensors if not sensor.value_uploaded]
+
+    def get_sensor(self, sensor_id: str) -> Sensor | None:
+        """Get a sensor by ID."""
+        for sensor in self.sensors:
+            if sensor.sensor_id == sensor_id:
+                return sensor
+        return None
+
+    def create_sensor(self, sensor_id: str) -> Sensor:
         """Add a sensor to the client.
 
         Args:
             sensor_id: Unique identifier for the sensor
 
         Returns:
-            The new or existing sensor
+            The new sensor
         """
-        if sensor_id in self.sensors:
-            return self.sensors[sensor_id]
-
-        sensor = Sensor(sensor_id, self)
-        self.sensors[sensor_id] = sensor
+        sensor = Sensor(sensor_id)
+        self.sensors.append(sensor)
         return sensor
 
-    def update_sensor(
+    async def update_sensor(
         self, sensor_id: str, value: ValueType, timestamp: dt.datetime | None = None
     ) -> None:
         """Update a sensor's value.
@@ -162,7 +167,8 @@ class WebhookClient:
             timestamp: Optional timestamp for the measurement
         """
         sensor = self.get_or_create_sensor(sensor_id)
-        sensor.update(value, timestamp)
+        async with self._upload_lock:  # Lock to prevent an update while uploading
+            sensor.update(value, timestamp)
 
     def get_or_create_sensor(self, sensor_id: str) -> Sensor:
         """Get an existing sensor or create a new one.
@@ -173,17 +179,10 @@ class WebhookClient:
         Returns:
             The existing or new sensor
         """
-        if sensor_id not in self.sensors:
-            self.add_sensor(sensor_id)
-        return self.sensors[sensor_id]
-
-    def notify_sensor_update(self, sensor: Sensor) -> None:
-        """Called when a sensor is updated.
-
-        Args:
-            sensor: The updated sensor
-        """
-        self.updated_sensors.add(sensor.sensor_id)
+        sensor = self.get_sensor(sensor_id)
+        if sensor is None:
+            sensor = self.create_sensor(sensor_id)
+        return sensor
 
     async def close(self) -> None:
         """Close the client and clean up resources."""
@@ -195,7 +194,7 @@ class WebhookClient:
                 pass
             self._auto_sync_task = None
 
-        if self._own_session and self.session is not None:
+        if self._own_session:
             await self.session.close()
             # We need to set self.session to None, but mypy complains due to the type.
             # We'll use a cast to avoid the error:
@@ -306,6 +305,11 @@ class WebhookClient:
         Returns:
             True if the device is claimed, False otherwise
         """
+        # Check if we have headers
+        if self.session.headers is None:
+            await self.authenticate()
+            return bool(self.is_claimed)
+
         # Check if we have authentication info
         if self.is_claimed is None:
             await self.authenticate()
@@ -345,7 +349,10 @@ class WebhookClient:
 
         return bool(self.is_claimed)
 
-    async def send_data(self, data_points: dict[str, Any]) -> str | None:
+    @backoff.on_exception(backoff.expo, ClientError, max_tries=3, max_time=60)
+    async def send_data(
+        self, data_points: dict[str, Any], timestamp: dt.datetime | int | None = None
+    ) -> None:
         """Send data points to EnergyID.
 
         Args:
@@ -364,6 +371,17 @@ class WebhookClient:
         # Create a copy of the data points to avoid modifying the original
         payload = dict(data_points)
 
+        # Add timestamp if provided or use current time
+        if timestamp:
+            if isinstance(timestamp, dt.datetime):
+                payload["ts"] = int(timestamp.timestamp())
+            else:
+                # Already an int timestamp
+                payload["ts"] = timestamp
+        elif "ts" not in payload:
+            # Add current time if not provided
+            payload["ts"] = int(dt.datetime.now(dt.timezone.utc).timestamp())
+
         # Add timestamp if not provided (current time in seconds)
         if "ts" not in payload:
             payload["ts"] = int(dt.datetime.now(dt.timezone.utc).timestamp())
@@ -373,133 +391,40 @@ class WebhookClient:
         _LOGGER.debug("Headers: %s", self.headers)
         _LOGGER.debug("Payload: %s", payload)
 
-        # Make sure we have a webhook URL
-        if self.webhook_url is None:
-            raise ValueError("No webhook URL available")
-
         # Send data to webhook
-        try:
-            if self.headers is None:
-                # This shouldn't happen after _ensure_authenticated()
-                raise ValueError("No authentication headers available")
+        self.webhook_url = cast(str, self.webhook_url)
+        async with self.session.post(
+            self.webhook_url, json=payload, headers=self.headers
+        ) as response:
+            response.raise_for_status()
+            response_text = await response.text()
+            _LOGGER.debug("Response: %s", response_text)
 
-            async with self.session.post(
-                self.webhook_url, json=payload, headers=self.headers
-            ) as response:
-                # Handle expired token case
-                if response.status == 401:
-                    _LOGGER.info("Token expired (401), re-authenticating...")
-
-                    # Re-authenticate
-                    await self.authenticate()
-
-                    if self.webhook_url is None or self.headers is None:
-                        raise ValueError("Failed to refresh authentication")
-
-                    # Retry the request
-                    async with self.session.post(
-                        self.webhook_url, json=payload, headers=self.headers
-                    ) as retry_response:
-                        retry_response.raise_for_status()
-                        resp_text = await retry_response.text()
-                        _LOGGER.debug("Response status: %s", retry_response.status)
-                        return resp_text
-                else:
-                    response.raise_for_status()
-                    resp_text = await response.text()
-                    _LOGGER.debug("Response status: %s", response.status)
-                    return resp_text
-        except Exception as e:
-            _LOGGER.error("Error sending data: %s", e)
-            raise
-
-    async def send_batch_data(
-        self,
-        metrics_data: dict[str, ValueType | dt.datetime],
-        timestamp: dt.datetime | int | None = None,
-    ) -> str | None:
-        """Send multiple metrics in a single request.
-
-        Args:
-            metrics_data: Dictionary of metric keys and values
-            timestamp: Optional timestamp (defaults to current time)
-
-        Returns:
-            Response from the server
-        """
-        # Create payload
-        payload: dict[str, Any] = dict(metrics_data)  # Make a copy
-
-        # Add timestamp if provided or use current time
-        if timestamp:
-            if isinstance(timestamp, dt.datetime):
-                payload["ts"] = int(timestamp.timestamp())
-            else:
-                # Already an int timestamp
-                payload["ts"] = timestamp
-        else:
-            payload["ts"] = int(dt.datetime.now(dt.timezone.utc).timestamp())
-
-        return await self.send_data(payload)
-
-    async def synchronize_sensors(self) -> str | None:
+    async def synchronize_sensors(self) -> None:
         """Synchronize all updated sensors to EnergyID.
 
         Returns:
             Server response if data was sent, None otherwise
         """
-        if not self.updated_sensors:
+        if len(self.updated_sensors) == 0:
             _LOGGER.debug("No sensors to synchronize")
             return None
 
-        # Get the current time before starting sync
-        sync_time = dt.datetime.now(dt.timezone.utc)
-
         # Lock to prevent concurrent uploads
         async with self._upload_lock:
-            # Group sensors by timestamp rounded to the nearest second
-            sensors_by_time: dict[int, list[Sensor]] = {}
-
-            for sensor_id in list(self.updated_sensors):
-                sensor = self.sensors[sensor_id]
-
-                # Get timestamp or use current time
-                ts = sensor.timestamp or sync_time
-                ts_second = int(ts.timestamp())
-
-                if ts_second not in sensors_by_time:
-                    sensors_by_time[ts_second] = []
-
-                sensors_by_time[ts_second].append(sensor)
+            # Group sensors by timestamp, rounded to the nearest second
+            sensor_groups = groupby(
+                self.updated_sensors, key=lambda x: int(x.timestamp.timestamp())
+            )  # type: ignore
 
             # Create data points for each time group and send them
-            responses: list[str] = []
-            for ts_second, sensors in sensors_by_time.items():
-                data_points: dict[str, Any] = {"ts": ts_second}
-
+            for timestamp, sensors in sensor_groups:
+                sensors = list(sensors)
+                data_points = {sensor.sensor_id: sensor.value for sensor in sensors}
+                await self.send_data(data_points, timestamp)
+                # Mark sensors as uploaded
                 for sensor in sensors:
-                    if sensor.value is not None:
-                        data_points[sensor.sensor_id] = sensor.value
-
-                if (
-                    len(data_points) > 1
-                ):  # Only send if we have data beyond the timestamp
-                    response = await self.send_data(data_points)
-                    if response is not None:
-                        responses.append(response)
-
-                    # Mark sensors as uploaded
-                    for sensor in sensors:
-                        sensor.value_uploaded = True
-                        self.updated_sensors.discard(sensor.sensor_id)
-
-            # Update sync time
-            self.last_sync_time = sync_time
-
-            if responses:
-                return responses[-1]  # Return the last response
-
-            return None
+                    sensor.value_uploaded = True
 
     async def _auto_sync_loop(self) -> None:
         """Background task to automatically synchronize sensors."""
