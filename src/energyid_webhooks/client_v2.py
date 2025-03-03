@@ -414,8 +414,9 @@ class WebhookClient:
         async with self._upload_lock:
             # Group sensors by timestamp, rounded to the nearest second
             sensor_groups = groupby(
-                self.updated_sensors, key=lambda x: int(x.timestamp.timestamp())
-            )  # type: ignore
+                self.updated_sensors,
+                key=lambda x: int(x.timestamp.timestamp()),  # type: ignore
+            )
 
             # Create data points for each time group and send them
             for timestamp, sensors in sensor_groups:
