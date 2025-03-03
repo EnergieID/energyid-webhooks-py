@@ -6,13 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "energyid-webhooks"
 dynamic = ["version"]
 authors = [
-    {name = "Jan Pecinovsky", email = "jan@energieid.be"},
-    {name = "Oscar Swyns", email = "oscar@energieid.be"}
+    { name = "Jan Pecinovsky", email = "jan@energieid.be" },
+    { name = "Oscar Swyns", email = "oscar@energieid.be" },
 ]
 description = "Light weight Python package to interface with EnergyID Webhooks"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -25,12 +25,13 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Scientific/Engineering :: Physics",
     "Topic :: Software Development :: Libraries :: Python Modules",
-    "Typing :: Typed"
+    "Typing :: Typed",
 ]
-dependencies = [
-    "aiohttp>=3.11.12",
-    "requests>=2.32.3",
-]
+
+dependencies = ["aiohttp>=3.11.12", "requests>=2.32.3"]
+
+[project.optional-dependencies]
+dev = ["jupyter>=1.0.0", "nest-asyncio>=1.5.8", "python-dotenv>=1.0.0"]
 
 [tool.setuptools_scm]
 version_file = "src/energyid_webhooks/_version.py"
@@ -40,7 +41,7 @@ version_file = "src/energyid_webhooks/_version.py"
 "Bug Tracker" = "https://github.com/EnergieID/energyid-webhooks-py/issues"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
