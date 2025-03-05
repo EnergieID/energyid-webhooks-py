@@ -36,7 +36,7 @@ class Sensor:
         self.last_update_time: dt.datetime | None = None
         self.value_uploaded = False
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Sensor(sensor_id={self.sensor_id}, value={self.value}, timestamp={self.timestamp}, last_update_time={self.last_update_time}, value_uploaded={self.value_uploaded})"
 
     def update(self, value: ValueType, timestamp: dt.datetime | None = None) -> None:
@@ -349,7 +349,7 @@ class WebhookClient:
 
         return bool(self.is_claimed)
 
-    @backoff.on_exception(backoff.expo, ClientError, max_tries=3, max_time=60)
+    @backoff.on_exception(backoff.expo, ClientError, max_tries=3, max_time=60) # type: ignore
     async def send_data(
         self, data_points: dict[str, Any], timestamp: dt.datetime | int | None = None
     ) -> None:
@@ -413,14 +413,12 @@ class WebhookClient:
         # Lock to prevent concurrent uploads
         async with self._upload_lock:
             # Group sensors by timestamp, rounded to the nearest second
-            sensor_groups = groupby(
+            for timestamp, sensor_iter in groupby(
                 self.updated_sensors,
                 key=lambda x: int(x.timestamp.timestamp()),  # type: ignore
-            )
-
-            # Create data points for each time group and send them
-            for timestamp, sensors in sensor_groups:
-                sensors = list(sensors)
+            ):
+                # Convert iterator to list to make it reusable
+                sensors = list(sensor_iter)
                 data_points = {sensor.sensor_id: sensor.value for sensor in sensors}
                 await self.send_data(data_points, timestamp)
                 # Mark sensors as uploaded
