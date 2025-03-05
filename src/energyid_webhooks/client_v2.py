@@ -349,7 +349,7 @@ class WebhookClient:
 
         return bool(self.is_claimed)
 
-    @backoff.on_exception(backoff.expo, ClientError, max_tries=3, max_time=60) # type: ignore
+    @backoff.on_exception(backoff.expo, ClientError, max_tries=3, max_time=60)  # type: ignore
     async def send_data(
         self, data_points: dict[str, Any], timestamp: dt.datetime | int | None = None
     ) -> None:
