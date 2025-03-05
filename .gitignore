@@ -164,3 +164,4 @@ cython_debug/
 
 # Version file
 src/energyid_webhooks/_version.py
+demos/credentials.json
