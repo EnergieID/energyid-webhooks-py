@@ -59,8 +59,8 @@ class WebhookClient:
 
     def __init__(
         self,
-        client_id: str,
-        client_secret: str,
+        provisioning_key: str,
+        provisioning_secret: str,
         device_id: str,
         device_name: str,
         firmware_version: str | None = None,
@@ -73,8 +73,8 @@ class WebhookClient:
         """Initialize the webhook client.
 
         Args:
-            client_id: The provisioning key from EnergyID
-            client_secret: The provisioning secret from EnergyID
+            provisioning_key: The provisioning key from EnergyID
+            provisioning_secret: The provisioning secret from EnergyID
             device_id: Unique identifier for the device
             device_name: Human-readable name for the device
             firmware_version: Optional firmware version
@@ -85,8 +85,8 @@ class WebhookClient:
             reauth_interval: Hours between token refresh (default 24)
         """
         # Device information
-        self.client_id = client_id
-        self.client_secret = client_secret
+        self.provisioning_key = provisioning_key
+        self.provisioning_secret = provisioning_secret
         self.device_id = device_id
         self.device_name = device_name
         self.firmware_version = firmware_version
@@ -220,8 +220,8 @@ class WebhookClient:
 
         # Set up authentication headers
         headers = {
-            "X-Provisioning-Key": self.client_id,
-            "X-Provisioning-Secret": self.client_secret,
+            "X-Provisioning-Key": self.provisioning_key,
+            "X-Provisioning-Secret": self.provisioning_secret,
         }
 
         # Make the request
