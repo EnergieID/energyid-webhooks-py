@@ -68,7 +68,6 @@ class WebhookClient:
         mac_address: str | None = None,
         local_device_url: str | None = None,
         session: ClientSession | None = None,
-        auto_sync_interval: int | None = None,
         reauth_interval: int = 24,  # Default to 24 hours as recommended
     ) -> None:
         """Initialize the webhook client.
@@ -83,7 +82,6 @@ class WebhookClient:
             mac_address: Optional MAC address
             local_device_url: Optional URL for local device configuration
             session: Optional aiohttp client session
-            auto_sync_interval: If set, automatically sync data at this interval (seconds)
             reauth_interval: Hours between token refresh (default 24)
         """
         # Device information
@@ -120,8 +118,6 @@ class WebhookClient:
 
         # Auto-sync
         self._auto_sync_task: asyncio.Task[None] | None = None
-        if auto_sync_interval:
-            self.start_auto_sync(auto_sync_interval)
 
     async def __aenter__(self) -> "WebhookClient":
         """Enter context manager."""
@@ -425,7 +421,7 @@ class WebhookClient:
                 for sensor in sensors:
                     sensor.value_uploaded = True
 
-    async def _auto_sync_loop(self) -> None:
+    async def _auto_sync_loop(self, interval: int) -> None:
         """Background task to automatically synchronize sensors."""
         while True:
             try:
@@ -433,7 +429,7 @@ class WebhookClient:
             except Exception as e:
                 _LOGGER.error("Error in auto-sync: %s", e)
 
-            await asyncio.sleep(self._auto_sync_interval)
+            await asyncio.sleep(interval)
 
     def start_auto_sync(self, interval_seconds: int) -> None:
         """Start automatic synchronization at the specified interval.
@@ -441,9 +437,10 @@ class WebhookClient:
         Args:
             interval_seconds: Sync interval in seconds
         """
-        self._auto_sync_interval = interval_seconds
 
         if self._auto_sync_task is not None:
             self._auto_sync_task.cancel()
 
-        self._auto_sync_task = asyncio.create_task(self._auto_sync_loop())
+        self._auto_sync_task = asyncio.create_task(
+            self._auto_sync_loop(interval=interval_seconds)
+        )
