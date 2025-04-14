@@ -28,7 +28,15 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-dependencies = ["aiohttp>=3.11.12", "requests>=2.32.3"]
+dependencies = [
+    "aiohttp>=3.11.12",
+    "backoff>=2.2.1",
+    "dotenv>=0.9.9",
+    "ipykernel>=6.29.5",
+    "mypy>=1.15.0",
+    "pip>=25.0.1",
+    "requests>=2.32.3",
+]
 
 [project.optional-dependencies]
 dev = ["jupyter>=1.0.0", "nest-asyncio>=1.5.8", "python-dotenv>=1.0.0"]
@@ -53,3 +61,10 @@ namespaces = false
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+    "nest-asyncio>=1.6.0",
+    "python-dotenv>=1.0.1",
+]

@@ -103,6 +103,7 @@ class WebhookClient:
         self.webhook_url: str | None = None
         self.headers: dict[str, str] | None = None
         self.webhook_policy: dict[str, Any] | None = None
+        self.uploadInterval: int = 60
         self.auth_valid_until: dt.datetime | None = None
         self.claim_code: str | None = None
         self.claim_url: str | None = None
@@ -237,25 +238,19 @@ class WebhookClient:
                 self.is_claimed = True
                 self.webhook_url = data["webhookUrl"]
                 self.headers = data["headers"]
-                self.webhook_policy = data["webhookPolicy"]
 
-                # Set auth valid until (token is valid for 48h, but we'll refresh after 24h)
+                # Dynamically set attributes from webhookPolicy
+                self.webhook_policy = data.get("webhookPolicy", {})
+                for key, value in self.webhook_policy.items():
+                    setattr(self, key, value)  # Dynamically set attributes
+
+                # Set auth valid until based on reauth_interval
                 self.auth_valid_until = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
-                    hours=24
+                    hours=self.reauth_interval
                 )
 
-                # Parse allowed interval
-                webhook_policy = self.webhook_policy or {}
-                if "allowedInterval" in webhook_policy:
-                    _LOGGER.info(
-                        "Webhook allows interval: %s",
-                        webhook_policy.get("allowedInterval"),
-                    )
-                if "allowedMetrics" in webhook_policy:
-                    _LOGGER.info(
-                        "Webhook allows metrics: %s",
-                        webhook_policy.get("allowedMetrics"),
-                    )
+                # Debug logging for dynamically set attributes
+                _LOGGER.info("Webhook policy attributes set: %s", self.webhook_policy)
 
                 return True
             else:
@@ -296,7 +291,10 @@ class WebhookClient:
         }
 
     async def _ensure_authenticated(self) -> bool:
-        """Ensure the client has valid authentication.
+        """Ensure the client has valid authentication and updated webhook info.
+
+        This method checks if authentication is needed and if so, refreshes
+        the webhook URL, headers, and policy by calling authenticate().
 
         Returns:
             True if the device is claimed, False otherwise
@@ -335,7 +333,7 @@ class WebhookClient:
 
             if should_reauth:
                 _LOGGER.info(
-                    "Token will expire in %.1f hours, refreshing now (threshold: %d hours)",
+                    "Token will expire in %.1f hours, refreshing webhook URL, headers and policy (threshold: %d hours)",
                     hours_until_expiration,
                     reauth_threshold,
                 )
@@ -376,10 +374,6 @@ class WebhookClient:
                 payload["ts"] = timestamp
         elif "ts" not in payload:
             # Add current time if not provided
-            payload["ts"] = int(dt.datetime.now(dt.timezone.utc).timestamp())
-
-        # Add timestamp if not provided (current time in seconds)
-        if "ts" not in payload:
             payload["ts"] = int(dt.datetime.now(dt.timezone.utc).timestamp())
 
         # Debug output
@@ -437,7 +431,6 @@ class WebhookClient:
         Args:
             interval_seconds: Sync interval in seconds
         """
-
         if self._auto_sync_task is not None:
             self._auto_sync_task.cancel()
 
