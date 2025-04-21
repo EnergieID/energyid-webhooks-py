@@ -12,12 +12,11 @@ authors = [
 description = "Light weight Python package to interface with EnergyID Webhooks"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { file = "LICENSE" }
+license = "MIT"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -31,22 +30,24 @@ classifiers = [
 dependencies = [
     "aiohttp>=3.11.12",
     "backoff>=2.2.1",
-    "dotenv>=0.9.9",
-    "ipykernel>=6.29.5",
-    "mypy>=1.15.0",
-    "pip>=25.0.1",
     "requests>=2.32.3",
 ]
-
-[project.optional-dependencies]
-dev = ["jupyter>=1.0.0", "nest-asyncio>=1.5.8", "python-dotenv>=1.0.0"]
-
-[tool.setuptools_scm]
-version_file = "src/energyid_webhooks/_version.py"
 
 [project.urls]
 "Homepage" = "https://github.com/EnergieID/energyid-webhooks-py"
 "Bug Tracker" = "https://github.com/EnergieID/energyid-webhooks-py/issues"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+    "jupyter>=1.0.0",
+    "mypy>=1.15.0",
+    "nest-asyncio>=1.5.8",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.setuptools_scm]
+version_file = "src/energyid_webhooks/_version.py"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
@@ -61,10 +62,3 @@ namespaces = false
 [tool.mypy]
 python_version = "3.11"
 strict = true
-
-[dependency-groups]
-dev = [
-    "jupyter>=1.1.1",
-    "nest-asyncio>=1.6.0",
-    "python-dotenv>=1.0.1",
-]
