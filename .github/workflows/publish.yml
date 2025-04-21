@@ -31,7 +31,7 @@ jobs:
       - name: Get Previous tag
         id: previoustag
         run: |
-            git fetch --tags
+            # git fetch --tags
             TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "v0.0.0")
             echo "tag=$TAG" >> $GITHUB_OUTPUT
 
