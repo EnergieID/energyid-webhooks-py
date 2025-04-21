@@ -9,7 +9,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     # Only run this job if the tag is on the main branch
-    if: github.ref_name == 'main' || endsWith(github.ref, '/main')
+    # if: github.ref_name == 'main' || endsWith(github.ref, '/main')
     permissions:
       id-token: write  # Required for trusted publishing
 
