@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.11"
 
 [[package]]
@@ -394,39 +395,19 @@ wheels = [
 ]
 
 [[package]]
-name = "dotenv"
-version = "0.9.9"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "python-dotenv" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/b7/545d2c10c1fc15e48653c91efde329a790f2eecfbbf2bd16003b5db2bab0/dotenv-0.9.9-py2.py3-none-any.whl", hash = "sha256:29cf74a087b31dafdb5a446b6d7e11cbce8ed2741540e2339c69fbef92c94ce9", size = 1892 },
-]
-
-[[package]]
 name = "energyid-webhooks"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "backoff" },
-    { name = "dotenv" },
-    { name = "ipykernel" },
-    { name = "mypy" },
-    { name = "pip" },
     { name = "requests" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "jupyter" },
-    { name = "nest-asyncio" },
-    { name = "python-dotenv" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "ipykernel" },
     { name = "jupyter" },
+    { name = "mypy" },
     { name = "nest-asyncio" },
     { name = "python-dotenv" },
 ]
@@ -435,21 +416,16 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.11.12" },
     { name = "backoff", specifier = ">=2.2.1" },
-    { name = "dotenv", specifier = ">=0.9.9" },
-    { name = "ipykernel", specifier = ">=6.29.5" },
-    { name = "jupyter", marker = "extra == 'dev'", specifier = ">=1.0.0" },
-    { name = "mypy", specifier = ">=1.15.0" },
-    { name = "nest-asyncio", marker = "extra == 'dev'", specifier = ">=1.5.8" },
-    { name = "pip", specifier = ">=25.0.1" },
-    { name = "python-dotenv", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "requests", specifier = ">=2.32.3" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "jupyter", specifier = ">=1.1.1" },
-    { name = "nest-asyncio", specifier = ">=1.6.0" },
-    { name = "python-dotenv", specifier = ">=1.0.1" },
+    { name = "ipykernel", specifier = ">=6.29.5" },
+    { name = "jupyter", specifier = ">=1.0.0" },
+    { name = "mypy", specifier = ">=1.15.0" },
+    { name = "nest-asyncio", specifier = ">=1.5.8" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
 
 [[package]]
@@ -1247,15 +1223,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9e/c3/059298687310d527a58bb01f3b1965787ee3b40dce76752eda8b44e9a2c5/pexpect-4.9.0-py2.py3-none-any.whl", hash = "sha256:7236d1e080e4936be2dc3e326cec0af72acf9212a7e1d060210e70a47e253523", size = 63772 },
-]
-
-[[package]]
-name = "pip"
-version = "25.0.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/70/53/b309b4a497b09655cb7e07088966881a57d082f48ac3cb54ea729fd2c6cf/pip-25.0.1.tar.gz", hash = "sha256:88f96547ea48b940a3a385494e181e29fb8637898f88d88737c5049780f196ea", size = 1950850 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c9/bc/b7db44f5f39f9d0494071bddae6880eb645970366d0a200022a1a93d57f5/pip-25.0.1-py3-none-any.whl", hash = "sha256:c46efd13b6aa8279f33f2864459c8ce587ea6a1a59ee20de055868d8f7688f7f", size = 1841526 },
 ]
 
 [[package]]
