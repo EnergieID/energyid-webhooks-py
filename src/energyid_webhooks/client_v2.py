@@ -266,11 +266,13 @@ class WebhookClient:
                 self.headers = data["headers"]
                 self.webhook_policy = data.get("webhookPolicy", {})
 
+                if self.webhook_policy:
+                    for key, value in self.webhook_policy.items():
+                        setattr(self, key, value)
+
                 self.recordNumber = data.get("recordNumber", None)
                 self.recordName = data.get("recordName", None)
 
-                for key, value in self.webhook_policy.items():
-                    setattr(self, key, value)
                 self.auth_valid_until = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
                     hours=self.reauth_interval
                 )
@@ -431,8 +433,8 @@ class WebhookClient:
 
         async with self._upload_lock:
 
-            def get_timestamp_key(sensor: Sensor | None) -> int | None:
-                if sensor and sensor.timestamp:
+            def get_timestamp_key(sensor: Sensor) -> int | None:
+                if sensor.timestamp:
                     if isinstance(sensor.timestamp, dt.datetime):
                         return int(sensor.timestamp.timestamp())
                     else:
@@ -449,7 +451,7 @@ class WebhookClient:
                 return None
 
             grouped_sensors = groupby(
-                sorted(updated, key=get_timestamp_key), key=get_timestamp_key
+                sorted(updated, key=lambda s: get_timestamp_key(s) or 0), key=get_timestamp_key
             )
 
             for timestamp_key, sensor_iter in grouped_sensors:
