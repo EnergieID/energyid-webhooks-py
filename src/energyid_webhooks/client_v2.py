@@ -107,6 +107,8 @@ class WebhookClient:
         self.is_claimed: bool | None = None
         self.webhook_url: str | None = None
         self.headers: dict[str, str] | None = None
+        self.recordNumber: str | None = None
+        self.recordName: str | None = None
         self.webhook_policy: dict[str, Any] | None = None
         self.uploadInterval: int = 60
         self.auth_valid_until: dt.datetime | None = None
@@ -263,6 +265,10 @@ class WebhookClient:
                 self.webhook_url = data["webhookUrl"]
                 self.headers = data["headers"]
                 self.webhook_policy = data.get("webhookPolicy", {})
+
+                self.recordNumber = data.get("recordNumber", None)
+                self.recordName = data.get("recordName", None)
+
                 for key, value in self.webhook_policy.items():
                     setattr(self, key, value)
                 self.auth_valid_until = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
@@ -389,6 +395,9 @@ class WebhookClient:
             raise ValueError(
                 "Webhook URL/headers not set, authentication likely failed."
             )
+
+        for sensor_id, value in data_points.items():
+            _LOGGER.debug("Sensor ID: %s, Payload: %s", sensor_id, value)
 
         try:
             async with self.session.post(
