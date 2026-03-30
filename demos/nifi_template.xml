@@ -1,0 +1,1262 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EnergyID Webhook - Apache NiFi Template
+  ========================================
+  Import via NiFi UI: Operate panel → Upload Template → select this file → Import
+  Then drag the template from the Templates list onto the canvas.
+
+  Before enabling processors, configure the following NiFi Variables (right-click
+  the Process Group → Variables) or use the NiFi Parameter Context:
+
+    provisioning_key    - Your EnergyID provisioning key
+    provisioning_secret - Your EnergyID provisioning secret
+    device_id           - Unique device identifier (e.g. "my-nifi-device-001")
+    device_name         - Human-readable device name (e.g. "NiFi Demo Device")
+
+  Flow overview
+  =============
+  [Auth branch]
+    GenerateFlowFile (auth trigger, every 24h)
+      → ReplaceText (build /hello body)
+      → InvokeHTTP  (POST /hello)
+      → EvaluateJsonPath (extract webhookUrl, authorization, x-twin-id, uploadInterval)
+      → UpdateAttribute (persist credentials into well-known attributes)
+      → LogAttribute (debug)
+
+  [Data branch]
+    GenerateFlowFile (sensor data trigger, every 5 min)
+      → ReplaceText (build data payload)
+      → InvokeHTTP  (POST to webhookUrl)
+      → RouteOnAttribute (200/201 → success, 401 → re-auth, 429 → wait)
+          success  → LogAttribute
+          failure  → LogAttribute
+          reauth   → (connect back to auth GenerateFlowFile or handle externally)
+          ratelimit→ LogAttribute (pause then retry manually / add Wait processor)
+
+  Notes
+  =====
+  * Processor UUIDs are fixed so that connections remain stable on re-import.
+  * All positions are laid out left-to-right on a 200-unit grid so the flow is
+    readable immediately after import without manual rearrangement.
+  * NiFi Expression Language is used throughout (${variable} syntax).
+-->
+<template encoding-version="1.0">
+  <description>EnergyID Webhook flow: device provisioning via /hello and periodic sensor data upload. Configure provisioning_key, provisioning_secret, device_id, device_name as NiFi Variables on the Process Group.</description>
+  <groupId>00000000-0000-0000-0000-000000000000</groupId>
+  <name>EnergyID Webhook</name>
+  <snippet>
+    <processGroups>
+      <processGroups>
+        <!-- ═══════════════════════════════════════════════════════════════
+             PROCESS GROUP: EnergyID Webhook
+             ═══════════════════════════════════════════════════════════════ -->
+        <id>eid-pg-0001-0000-0000-000000000001</id>
+        <parentGroupId>00000000-0000-0000-0000-000000000000</parentGroupId>
+        <position>
+          <x>100.0</x>
+          <y>100.0</y>
+        </position>
+        <comments>EnergyID Webhook integration. Set Variables: provisioning_key, provisioning_secret, device_id, device_name.</comments>
+        <defaultFlowFileExpiration>0 sec</defaultFlowFileExpiration>
+        <defaultBackPressureObjectThreshold>10000</defaultBackPressureObjectThreshold>
+        <defaultBackPressureDataSizeThreshold>1 GB</defaultBackPressureDataSizeThreshold>
+        <flowfileConcurrency>UNBOUNDED</flowfileConcurrency>
+        <flowfileOutboundPolicy>STREAM_WHEN_AVAILABLE</flowfileOutboundPolicy>
+        <name>EnergyID Webhook</name>
+        <variables>
+          <entry>
+            <key>provisioning_key</key>
+            <value>YOUR_PROVISIONING_KEY</value>
+          </entry>
+          <entry>
+            <key>provisioning_secret</key>
+            <value>YOUR_PROVISIONING_SECRET</value>
+          </entry>
+          <entry>
+            <key>device_id</key>
+            <value>nifi-device-001</value>
+          </entry>
+          <entry>
+            <key>device_name</key>
+            <value>NiFi Demo Device</value>
+          </entry>
+        </variables>
+
+        <!-- ───────────────────────────────────────────────────────────────
+             AUTH BRANCH
+             ─────────────────────────────────────────────────────────────── -->
+
+        <!-- 1. GenerateFlowFile – auth trigger (every 24 hours) -->
+        <processors>
+          <id>eid-proc-auth-trigger-00000001</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>0.0</x>
+            <y>0.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>Triggers /hello authentication every 24 hours. Run manually or on schedule.</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <descriptors>
+              <entry>
+                <key>File Size</key>
+                <value>
+                  <name>File Size</name>
+                </value>
+              </entry>
+              <entry>
+                <key>Batch Size</key>
+                <value>
+                  <name>Batch Size</name>
+                </value>
+              </entry>
+              <entry>
+                <key>Data Format</key>
+                <value>
+                  <name>Data Format</name>
+                </value>
+              </entry>
+              <entry>
+                <key>Unique FlowFiles</key>
+                <value>
+                  <name>Unique FlowFiles</name>
+                </value>
+              </entry>
+            </descriptors>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>File Size</key>
+                <value>0B</value>
+              </entry>
+              <entry>
+                <key>Batch Size</key>
+                <value>1</value>
+              </entry>
+              <entry>
+                <key>Data Format</key>
+                <value>Text</value>
+              </entry>
+              <entry>
+                <key>Unique FlowFiles</key>
+                <value>false</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>86400 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>Trigger Auth (24h)</name>
+          <relationships>
+            <autoTerminate>false</autoTerminate>
+            <name>success</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.GenerateFlowFile</type>
+        </processors>
+
+        <!-- 2. ReplaceText – build /hello request body -->
+        <processors>
+          <id>eid-proc-auth-body-000000002</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>220.0</x>
+            <y>0.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>Builds the JSON body for POST /hello</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>Replacement Value</key>
+                <value>{"deviceId": "${device_id}", "deviceName": "${device_name}"}</value>
+              </entry>
+              <entry>
+                <key>Replacement Strategy</key>
+                <value>Always Replace</value>
+              </entry>
+              <entry>
+                <key>Evaluation Mode</key>
+                <value>Entire text</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>0 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>Build /hello Body</name>
+          <relationships>
+            <autoTerminate>false</autoTerminate>
+            <name>success</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>failure</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.ReplaceText</type>
+        </processors>
+
+        <!-- 3. InvokeHTTP – POST /hello -->
+        <processors>
+          <id>eid-proc-auth-http-000000003</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>440.0</x>
+            <y>0.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>POST to https://hooks.energyid.eu/hello with provisioning credentials</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>HTTP Method</key>
+                <value>POST</value>
+              </entry>
+              <entry>
+                <key>Remote URL</key>
+                <value>https://hooks.energyid.eu/hello</value>
+              </entry>
+              <entry>
+                <key>Content-Type</key>
+                <value>application/json</value>
+              </entry>
+              <!-- Provisioning headers sent as dynamic properties -->
+              <entry>
+                <key>X-Provisioning-Key</key>
+                <value>${provisioning_key}</value>
+              </entry>
+              <entry>
+                <key>X-Provisioning-Secret</key>
+                <value>${provisioning_secret}</value>
+              </entry>
+              <entry>
+                <key>Send Message Body</key>
+                <value>true</value>
+              </entry>
+              <entry>
+                <key>Use Chunked Encoding</key>
+                <value>false</value>
+              </entry>
+              <entry>
+                <key>Read Timeout</key>
+                <value>15 secs</value>
+              </entry>
+              <entry>
+                <key>Connection Timeout</key>
+                <value>10 secs</value>
+              </entry>
+              <entry>
+                <key>invokehttp-response-body-ignored</key>
+                <value>false</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>0 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>POST /hello</name>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>No Retry</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>Original</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>false</autoTerminate>
+            <name>Response</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>Retry</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>Failure</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.InvokeHTTP</type>
+        </processors>
+
+        <!-- 4. EvaluateJsonPath – extract auth fields from /hello response -->
+        <processors>
+          <id>eid-proc-auth-json-000000004</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>660.0</x>
+            <y>0.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>Extracts webhookUrl, authorization, x-twin-id, and uploadInterval from /hello JSON response</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>Destination</key>
+                <value>flowfile-attribute</value>
+              </entry>
+              <entry>
+                <key>Return Type</key>
+                <value>auto-detect</value>
+              </entry>
+              <entry>
+                <key>Path Not Found Behavior</key>
+                <value>warn</value>
+              </entry>
+              <entry>
+                <key>Null Value Representation</key>
+                <value>empty string</value>
+              </entry>
+              <!-- Dynamic properties: attribute_name → JSONPath expression -->
+              <entry>
+                <key>eid.webhookUrl</key>
+                <value>$.webhookUrl</value>
+              </entry>
+              <entry>
+                <key>eid.authorization</key>
+                <value>$.headers.authorization</value>
+              </entry>
+              <entry>
+                <key>eid.twinId</key>
+                <value>$.headers['x-twin-id']</value>
+              </entry>
+              <entry>
+                <key>eid.uploadInterval</key>
+                <value>$.webhookPolicy.uploadInterval</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>0 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>Extract Auth Fields</name>
+          <relationships>
+            <autoTerminate>false</autoTerminate>
+            <name>matched</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>unmatched</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>failure</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.EvaluateJsonPath</type>
+        </processors>
+
+        <!-- 5. UpdateAttribute – persist credentials for the data-upload branch -->
+        <processors>
+          <id>eid-proc-auth-attr-000000005</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>880.0</x>
+            <y>0.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>Copies extracted auth attributes into stable attribute names used by the data-upload branch. Also records the auth timestamp.</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <!-- Keep the same names; this processor is a checkpoint for logging and future credential caching. -->
+              <entry>
+                <key>eid.webhookUrl</key>
+                <value>${eid.webhookUrl}</value>
+              </entry>
+              <entry>
+                <key>eid.authorization</key>
+                <value>${eid.authorization}</value>
+              </entry>
+              <entry>
+                <key>eid.twinId</key>
+                <value>${eid.twinId}</value>
+              </entry>
+              <entry>
+                <key>eid.uploadInterval</key>
+                <value>${eid.uploadInterval}</value>
+              </entry>
+              <entry>
+                <key>eid.authTimestamp</key>
+                <value>${now():toNumber()}</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>0 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>Store Auth Credentials</name>
+          <relationships>
+            <autoTerminate>false</autoTerminate>
+            <name>success</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.UpdateAttribute</type>
+        </processors>
+
+        <!-- 6. LogAttribute – log successful auth (debug) -->
+        <processors>
+          <id>eid-proc-auth-log-000000006</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>1100.0</x>
+            <y>0.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>Logs the auth result attributes for debugging. Safe to auto-terminate in production.</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>Log Level</key>
+                <value>info</value>
+              </entry>
+              <entry>
+                <key>Log Payload</key>
+                <value>false</value>
+              </entry>
+              <entry>
+                <key>Attributes to Log</key>
+                <value>eid\..+</value>
+              </entry>
+              <entry>
+                <key>Log prefix</key>
+                <value>[EnergyID AUTH]</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>0 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>Log Auth Result</name>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>success</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.LogAttribute</type>
+        </processors>
+
+        <!-- ───────────────────────────────────────────────────────────────
+             DATA BRANCH
+             ─────────────────────────────────────────────────────────────── -->
+
+        <!-- 7. GenerateFlowFile – sensor data trigger (every 5 minutes) -->
+        <processors>
+          <id>eid-proc-data-trigger-0000007</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>0.0</x>
+            <y>300.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>Triggers sensor data upload on a schedule matching the uploadInterval returned by /hello (default 5 min). In a real integration replace this with a processor that reads actual sensor values.</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>File Size</key>
+                <value>0B</value>
+              </entry>
+              <entry>
+                <key>Batch Size</key>
+                <value>1</value>
+              </entry>
+              <entry>
+                <key>Data Format</key>
+                <value>Text</value>
+              </entry>
+              <entry>
+                <key>Unique FlowFiles</key>
+                <value>false</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>300 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>Trigger Data Upload (5 min)</name>
+          <relationships>
+            <autoTerminate>false</autoTerminate>
+            <name>success</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.GenerateFlowFile</type>
+        </processors>
+
+        <!-- 8. ReplaceText – build sensor data JSON payload -->
+        <processors>
+          <id>eid-proc-data-body-000000008</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>220.0</x>
+            <y>300.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>Builds the JSON payload. ts is the current Unix timestamp in seconds (mandatory). el is the electricity reading in kWh. Replace 12345.67 with a real attribute reference such as ${sensor.value}.</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>Replacement Value</key>
+                <value>{"ts": ${now():toNumber():divide(1000)}, "el": 12345.67}</value>
+              </entry>
+              <entry>
+                <key>Replacement Strategy</key>
+                <value>Always Replace</value>
+              </entry>
+              <entry>
+                <key>Evaluation Mode</key>
+                <value>Entire text</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>0 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>Build Data Payload</name>
+          <relationships>
+            <autoTerminate>false</autoTerminate>
+            <name>success</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>failure</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.ReplaceText</type>
+        </processors>
+
+        <!-- 9. InvokeHTTP – POST sensor data to webhookUrl -->
+        <processors>
+          <id>eid-proc-data-http-000000009</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>440.0</x>
+            <y>300.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>POSTs sensor data JSON to the webhookUrl obtained during /hello authentication. Authorization and x-twin-id headers are read from FlowFile attributes set by the auth branch. IMPORTANT: in a real multi-node setup these attributes must be propagated via a distributed cache (e.g., DistributedMapCache) rather than relying on FlowFile attributes from a separate branch.</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>HTTP Method</key>
+                <value>POST</value>
+              </entry>
+              <entry>
+                <key>Remote URL</key>
+                <!-- Reads webhookUrl stored as FlowFile attribute by the auth branch -->
+                <value>${eid.webhookUrl}</value>
+              </entry>
+              <entry>
+                <key>Content-Type</key>
+                <value>application/json</value>
+              </entry>
+              <!-- Auth headers from FlowFile attributes -->
+              <entry>
+                <key>authorization</key>
+                <value>${eid.authorization}</value>
+              </entry>
+              <entry>
+                <key>x-twin-id</key>
+                <value>${eid.twinId}</value>
+              </entry>
+              <entry>
+                <key>Send Message Body</key>
+                <value>true</value>
+              </entry>
+              <entry>
+                <key>Use Chunked Encoding</key>
+                <value>false</value>
+              </entry>
+              <entry>
+                <key>Read Timeout</key>
+                <value>15 secs</value>
+              </entry>
+              <entry>
+                <key>Connection Timeout</key>
+                <value>10 secs</value>
+              </entry>
+              <entry>
+                <key>invokehttp-response-body-ignored</key>
+                <value>false</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>0 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>POST Sensor Data</name>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>No Retry</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>Original</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>false</autoTerminate>
+            <name>Response</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>Retry</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>Failure</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.InvokeHTTP</type>
+        </processors>
+
+        <!-- 10. RouteOnAttribute – route based on HTTP response status -->
+        <processors>
+          <id>eid-proc-data-route-00000010</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>660.0</x>
+            <y>300.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>Routes the response by HTTP status code. 200/201 → success. 401 → token expired, trigger re-auth. 429 → rate-limited. All others → failure.</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>Routing Strategy</key>
+                <value>Route to Property name</value>
+              </entry>
+              <!-- Dynamic routing properties using NiFi Expression Language -->
+              <entry>
+                <key>success</key>
+                <value>${invokehttp.status.code:matches('20[01]')}</value>
+              </entry>
+              <entry>
+                <key>reauth</key>
+                <value>${invokehttp.status.code:equals('401')}</value>
+              </entry>
+              <entry>
+                <key>ratelimit</key>
+                <value>${invokehttp.status.code:equals('429')}</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>0 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>Route on HTTP Status</name>
+          <relationships>
+            <autoTerminate>false</autoTerminate>
+            <name>success</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>false</autoTerminate>
+            <name>reauth</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>false</autoTerminate>
+            <name>ratelimit</name>
+          </relationships>
+          <relationships>
+            <autoTerminate>false</autoTerminate>
+            <name>unmatched</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.RouteOnAttribute</type>
+        </processors>
+
+        <!-- 11. LogAttribute – success path -->
+        <processors>
+          <id>eid-proc-data-log-success-011</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>880.0</x>
+            <y>200.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>Logs successful data upload. Auto-terminates the FlowFile after logging.</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>Log Level</key>
+                <value>info</value>
+              </entry>
+              <entry>
+                <key>Log Payload</key>
+                <value>false</value>
+              </entry>
+              <entry>
+                <key>Attributes to Log</key>
+                <value>invokehttp\..*</value>
+              </entry>
+              <entry>
+                <key>Log prefix</key>
+                <value>[EnergyID SUCCESS]</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>0 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>Log Success</name>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>success</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.LogAttribute</type>
+        </processors>
+
+        <!-- 12. LogAttribute – re-auth path (401) -->
+        <processors>
+          <id>eid-proc-data-log-reauth-012</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>880.0</x>
+            <y>340.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>Logs a 401 Unauthorized response. Connect the 'success' output of this processor back to the 'Build /hello Body' ReplaceText processor (or to the auth GenerateFlowFile) to trigger re-authentication. In this template it auto-terminates; wire the connection manually after import to close the re-auth loop.</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>Log Level</key>
+                <value>warn</value>
+              </entry>
+              <entry>
+                <key>Log Payload</key>
+                <value>false</value>
+              </entry>
+              <entry>
+                <key>Attributes to Log</key>
+                <value>invokehttp\..*</value>
+              </entry>
+              <entry>
+                <key>Log prefix</key>
+                <value>[EnergyID 401 RE-AUTH REQUIRED]</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>0 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>Log 401 Re-Auth</name>
+          <relationships>
+            <!-- Auto-terminate here; see comments above re: wiring back to auth -->
+            <autoTerminate>true</autoTerminate>
+            <name>success</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.LogAttribute</type>
+        </processors>
+
+        <!-- 13. LogAttribute – rate-limit path (429) -->
+        <processors>
+          <id>eid-proc-data-log-ratelimit-13</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>880.0</x>
+            <y>460.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>Logs a 429 Too Many Requests response. The Retry-After header value is available in the invokehttp.response.headers attribute. Add a Wait/Notify processor pair or a penalise connection to implement back-off.</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>Log Level</key>
+                <value>warn</value>
+              </entry>
+              <entry>
+                <key>Log Payload</key>
+                <value>false</value>
+              </entry>
+              <entry>
+                <key>Attributes to Log</key>
+                <value>invokehttp\..*</value>
+              </entry>
+              <entry>
+                <key>Log prefix</key>
+                <value>[EnergyID 429 RATE LIMITED]</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>0 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>Log 429 Rate Limit</name>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>success</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.LogAttribute</type>
+        </processors>
+
+        <!-- 14. LogAttribute – unmatched / unexpected status codes -->
+        <processors>
+          <id>eid-proc-data-log-failure-014</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <position>
+            <x>880.0</x>
+            <y>580.0</y>
+          </position>
+          <bundle>
+            <artifact>nifi-standard-nar</artifact>
+            <group>org.apache.nifi</group>
+            <version>1.28.0</version>
+          </bundle>
+          <config>
+            <bulletinLevel>WARN</bulletinLevel>
+            <comments>Logs any unexpected HTTP status codes (4xx other than 401/429, 5xx, etc.).</comments>
+            <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+            <executionNode>ALL</executionNode>
+            <lossTolerant>false</lossTolerant>
+            <penaltyDuration>30 sec</penaltyDuration>
+            <properties>
+              <entry>
+                <key>Log Level</key>
+                <value>error</value>
+              </entry>
+              <entry>
+                <key>Log Payload</key>
+                <value>true</value>
+              </entry>
+              <entry>
+                <key>Attributes to Log</key>
+                <value>invokehttp\..*</value>
+              </entry>
+              <entry>
+                <key>Log prefix</key>
+                <value>[EnergyID UNEXPECTED ERROR]</value>
+              </entry>
+            </properties>
+            <runDurationMillis>0</runDurationMillis>
+            <schedulingPeriod>0 sec</schedulingPeriod>
+            <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+            <yieldDuration>1 sec</yieldDuration>
+          </config>
+          <name>Log Unexpected Error</name>
+          <relationships>
+            <autoTerminate>true</autoTerminate>
+            <name>success</name>
+          </relationships>
+          <style/>
+          <type>org.apache.nifi.processors.standard.LogAttribute</type>
+        </processors>
+
+        <!-- ═══════════════════════════════════════════════════════════════
+             CONNECTIONS
+             ═══════════════════════════════════════════════════════════════ -->
+
+        <!-- Auth branch connections -->
+
+        <!-- 1→2: auth trigger → build /hello body -->
+        <connections>
+          <id>eid-conn-0001-0002-000000000001</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+          <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+          <destination>
+            <id>eid-proc-auth-body-000000002</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </destination>
+          <flowFileExpiration>0 sec</flowFileExpiration>
+          <labelIndex>1</labelIndex>
+          <name/>
+          <selectedRelationships>success</selectedRelationships>
+          <source>
+            <id>eid-proc-auth-trigger-00000001</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </source>
+          <zIndex>0</zIndex>
+        </connections>
+
+        <!-- 2→3: build /hello body → POST /hello -->
+        <connections>
+          <id>eid-conn-0002-0003-000000000002</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+          <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+          <destination>
+            <id>eid-proc-auth-http-000000003</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </destination>
+          <flowFileExpiration>0 sec</flowFileExpiration>
+          <labelIndex>1</labelIndex>
+          <name/>
+          <selectedRelationships>success</selectedRelationships>
+          <source>
+            <id>eid-proc-auth-body-000000002</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </source>
+          <zIndex>0</zIndex>
+        </connections>
+
+        <!-- 3→4: POST /hello Response → extract auth fields -->
+        <connections>
+          <id>eid-conn-0003-0004-000000000003</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+          <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+          <destination>
+            <id>eid-proc-auth-json-000000004</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </destination>
+          <flowFileExpiration>0 sec</flowFileExpiration>
+          <labelIndex>1</labelIndex>
+          <name/>
+          <selectedRelationships>Response</selectedRelationships>
+          <source>
+            <id>eid-proc-auth-http-000000003</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </source>
+          <zIndex>0</zIndex>
+        </connections>
+
+        <!-- 4→5: extract auth fields (matched) → store auth credentials -->
+        <connections>
+          <id>eid-conn-0004-0005-000000000004</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+          <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+          <destination>
+            <id>eid-proc-auth-attr-000000005</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </destination>
+          <flowFileExpiration>0 sec</flowFileExpiration>
+          <labelIndex>1</labelIndex>
+          <name/>
+          <selectedRelationships>matched</selectedRelationships>
+          <source>
+            <id>eid-proc-auth-json-000000004</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </source>
+          <zIndex>0</zIndex>
+        </connections>
+
+        <!-- 5→6: store auth credentials → log auth result -->
+        <connections>
+          <id>eid-conn-0005-0006-000000000005</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+          <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+          <destination>
+            <id>eid-proc-auth-log-000000006</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </destination>
+          <flowFileExpiration>0 sec</flowFileExpiration>
+          <labelIndex>1</labelIndex>
+          <name/>
+          <selectedRelationships>success</selectedRelationships>
+          <source>
+            <id>eid-proc-auth-attr-000000005</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </source>
+          <zIndex>0</zIndex>
+        </connections>
+
+        <!-- Data branch connections -->
+
+        <!-- 7→8: data trigger → build data payload -->
+        <connections>
+          <id>eid-conn-0007-0008-000000000006</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+          <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+          <destination>
+            <id>eid-proc-data-body-000000008</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </destination>
+          <flowFileExpiration>0 sec</flowFileExpiration>
+          <labelIndex>1</labelIndex>
+          <name/>
+          <selectedRelationships>success</selectedRelationships>
+          <source>
+            <id>eid-proc-data-trigger-0000007</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </source>
+          <zIndex>0</zIndex>
+        </connections>
+
+        <!-- 8→9: build data payload → POST sensor data -->
+        <connections>
+          <id>eid-conn-0008-0009-000000000007</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+          <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+          <destination>
+            <id>eid-proc-data-http-000000009</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </destination>
+          <flowFileExpiration>0 sec</flowFileExpiration>
+          <labelIndex>1</labelIndex>
+          <name/>
+          <selectedRelationships>success</selectedRelationships>
+          <source>
+            <id>eid-proc-data-body-000000008</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </source>
+          <zIndex>0</zIndex>
+        </connections>
+
+        <!-- 9→10: POST sensor data Response → route on HTTP status -->
+        <connections>
+          <id>eid-conn-0009-0010-000000000008</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+          <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+          <destination>
+            <id>eid-proc-data-route-00000010</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </destination>
+          <flowFileExpiration>0 sec</flowFileExpiration>
+          <labelIndex>1</labelIndex>
+          <name/>
+          <selectedRelationships>Response</selectedRelationships>
+          <source>
+            <id>eid-proc-data-http-000000009</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </source>
+          <zIndex>0</zIndex>
+        </connections>
+
+        <!-- 10→11: route success → log success -->
+        <connections>
+          <id>eid-conn-0010-0011-000000000009</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+          <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+          <destination>
+            <id>eid-proc-data-log-success-011</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </destination>
+          <flowFileExpiration>0 sec</flowFileExpiration>
+          <labelIndex>1</labelIndex>
+          <name/>
+          <selectedRelationships>success</selectedRelationships>
+          <source>
+            <id>eid-proc-data-route-00000010</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </source>
+          <zIndex>0</zIndex>
+        </connections>
+
+        <!-- 10→12: route reauth → log 401 re-auth -->
+        <connections>
+          <id>eid-conn-0010-0012-000000000010</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+          <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+          <destination>
+            <id>eid-proc-data-log-reauth-012</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </destination>
+          <flowFileExpiration>0 sec</flowFileExpiration>
+          <labelIndex>1</labelIndex>
+          <name/>
+          <selectedRelationships>reauth</selectedRelationships>
+          <source>
+            <id>eid-proc-data-route-00000010</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </source>
+          <zIndex>0</zIndex>
+        </connections>
+
+        <!-- 10→13: route ratelimit → log 429 rate limit -->
+        <connections>
+          <id>eid-conn-0010-0013-000000000011</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+          <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+          <destination>
+            <id>eid-proc-data-log-ratelimit-13</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </destination>
+          <flowFileExpiration>0 sec</flowFileExpiration>
+          <labelIndex>1</labelIndex>
+          <name/>
+          <selectedRelationships>ratelimit</selectedRelationships>
+          <source>
+            <id>eid-proc-data-route-00000010</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </source>
+          <zIndex>0</zIndex>
+        </connections>
+
+        <!-- 10→14: route unmatched → log unexpected error -->
+        <connections>
+          <id>eid-conn-0010-0014-000000000012</id>
+          <parentGroupId>eid-pg-0001-0000-0000-000000000001</parentGroupId>
+          <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+          <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+          <destination>
+            <id>eid-proc-data-log-failure-014</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </destination>
+          <flowFileExpiration>0 sec</flowFileExpiration>
+          <labelIndex>1</labelIndex>
+          <name/>
+          <selectedRelationships>unmatched</selectedRelationships>
+          <source>
+            <id>eid-proc-data-route-00000010</id>
+            <groupId>eid-pg-0001-0000-0000-000000000001</groupId>
+            <type>PROCESSOR</type>
+          </source>
+          <zIndex>0</zIndex>
+        </connections>
+
+      </processGroups>
+    </processGroups>
+  </snippet>
+  <timestamp>2026-03-13T00:00:00.000+00:00</timestamp>
+</template>

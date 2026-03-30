@@ -1,0 +1,1073 @@
+[
+    {
+        "id": "eid_flow_tab",
+        "type": "tab",
+        "label": "EnergyID Webhook Demo",
+        "disabled": false,
+        "info": "EnergyID webhook integration demo.\n\nSTEP 1: Authentication via /hello (with claim retry loop)\nSTEP 2: Single data POST\nSTEP 3: Batch data collection & upload\nSTEP 4: Multi-device (second deviceId)\n\nenv.get() reads from container environment variables:\n  ENERGYID_PROVISIONING_KEY, ENERGYID_PROVISIONING_SECRET,\n  ENERGYID_DEVICE_ID, ENERGYID_DEVICE_NAME\n\nSet these in your docker-compose.yml or .env file.\n401 responses trigger re-auth via link nodes (no cross-group wires)."
+    },
+    {
+        "id": "eid_group_auth",
+        "type": "group",
+        "z": "eid_flow_tab",
+        "name": "STEP 1: Authentication & Claim",
+        "style": {
+            "stroke": "#3f6db4",
+            "stroke-opacity": "1",
+            "fill": "#e8f0fe",
+            "fill-opacity": "0.3",
+            "label": true,
+            "label-position": "nw",
+            "color": "#3f6db4"
+        },
+        "nodes": [
+            "eid_comment_auth",
+            "eid_inject_auth",
+            "eid_func_provisioning",
+            "eid_debug_hello_req",
+            "eid_http_hello",
+            "eid_debug_hello_resp",
+            "eid_func_store",
+            "eid_debug_parsed",
+            "eid_debug_claim",
+            "eid_claim_delay",
+            "eid_claim_counter",
+            "eid_link_in_reauth"
+        ],
+        "x": 14,
+        "y": 19,
+        "w": 1332,
+        "h": 282
+    },
+    {
+        "id": "eid_group_data",
+        "type": "group",
+        "z": "eid_flow_tab",
+        "name": "STEP 2: Send Single Data Point",
+        "style": {
+            "stroke": "#2e7d32",
+            "stroke-opacity": "1",
+            "fill": "#e8f5e9",
+            "fill-opacity": "0.3",
+            "label": true,
+            "label-position": "nw",
+            "color": "#2e7d32"
+        },
+        "nodes": [
+            "eid_comment_data",
+            "eid_inject_data",
+            "eid_func_build_data",
+            "eid_debug_data_req",
+            "eid_http_data",
+            "eid_debug_data_resp",
+            "eid_func_check",
+            "eid_debug_ok",
+            "eid_debug_err",
+            "eid_link_out_reauth_data"
+        ],
+        "x": 14,
+        "y": 319,
+        "w": 1172,
+        "h": 202
+    },
+    {
+        "id": "eid_group_batch",
+        "type": "group",
+        "z": "eid_flow_tab",
+        "name": "STEP 3: Batch Collection & Upload",
+        "style": {
+            "stroke": "#e65100",
+            "stroke-opacity": "1",
+            "fill": "#fff3e0",
+            "fill-opacity": "0.3",
+            "label": true,
+            "label-position": "nw",
+            "color": "#e65100"
+        },
+        "nodes": [
+            "eid_batch_comment_step3",
+            "eid_batch_inject_sensor",
+            "eid_batch_func_collect",
+            "eid_batch_debug_buffered",
+            "eid_batch_inject_clock",
+            "eid_batch_func_build",
+            "eid_batch_debug_req",
+            "eid_batch_http_post",
+            "eid_batch_debug_resp",
+            "eid_batch_func_check",
+            "eid_batch_debug_ok",
+            "eid_batch_debug_err",
+            "eid_batch_comment_bottom",
+            "eid_link_out_reauth_batch"
+        ],
+        "x": 14,
+        "y": 539,
+        "w": 1242,
+        "h": 282
+    },
+    {
+        "id": "eid_group_device2",
+        "type": "group",
+        "z": "eid_flow_tab",
+        "name": "STEP 4: Multi-Device (Device 2)",
+        "style": {
+            "stroke": "#6a1b9a",
+            "stroke-opacity": "1",
+            "fill": "#f3e5f5",
+            "fill-opacity": "0.3",
+            "label": true,
+            "label-position": "nw",
+            "color": "#6a1b9a"
+        },
+        "nodes": [
+            "eid_d2_comment",
+            "eid_d2_inject_auth",
+            "eid_d2_func_provisioning",
+            "eid_d2_http_hello",
+            "eid_d2_func_store",
+            "eid_d2_debug_ok",
+            "eid_d2_debug_claim",
+            "eid_d2_inject_data",
+            "eid_d2_func_build",
+            "eid_d2_http_data",
+            "eid_d2_debug_result",
+            "eid_d2_comment_bottom"
+        ],
+        "x": 14,
+        "y": 839,
+        "w": 1172,
+        "h": 222
+    },
+    {
+        "id": "eid_comment_auth",
+        "type": "comment",
+        "z": "eid_flow_tab",
+        "g": "eid_group_auth",
+        "name": "POST /hello to authenticate. Returns webhookUrl + auth headers (claimed) or claimUrl (unclaimed).",
+        "info": "env.get() reads container environment variables.\nSet ENERGYID_PROVISIONING_KEY and ENERGYID_PROVISIONING_SECRET\nin your docker-compose .env file.\n\nThe 'link in' node receives 401 re-auth triggers from STEP 2 and STEP 3.",
+        "x": 420,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "eid_link_in_reauth",
+        "type": "link in",
+        "z": "eid_flow_tab",
+        "g": "eid_group_auth",
+        "name": "Re-Auth Trigger",
+        "links": [
+            "eid_link_out_reauth_data",
+            "eid_link_out_reauth_batch"
+        ],
+        "x": 175,
+        "y": 140,
+        "wires": [
+            [
+                "eid_func_provisioning"
+            ]
+        ]
+    },
+    {
+        "id": "eid_inject_auth",
+        "type": "inject",
+        "z": "eid_flow_tab",
+        "g": "eid_group_auth",
+        "name": "Authenticate (24h)",
+        "props": [],
+        "repeat": "86400",
+        "crontab": "",
+        "once": false,
+        "onceDelay": "2",
+        "topic": "",
+        "x": 130,
+        "y": 100,
+        "wires": [
+            [
+                "eid_func_provisioning"
+            ]
+        ]
+    },
+    {
+        "id": "eid_func_provisioning",
+        "type": "function",
+        "z": "eid_flow_tab",
+        "g": "eid_group_auth",
+        "name": "Set Provisioning Credentials",
+        "func": "msg.headers = {\n    \"Content-Type\": \"application/json\",\n    \"X-Provisioning-Key\": env.get(\"ENERGYID_PROVISIONING_KEY\"),\n    \"X-Provisioning-Secret\": env.get(\"ENERGYID_PROVISIONING_SECRET\")\n};\n\nmsg.payload = {\n    \"deviceId\": env.get(\"ENERGYID_DEVICE_ID\") || \"nodered_device_001\",\n    \"deviceName\": env.get(\"ENERGYID_DEVICE_NAME\") || \"Node-RED Device\"\n};\n\nmsg.url = \"https://hooks.energyid.eu/hello\";\n\nnode.status({ fill: \"blue\", shape: \"dot\", text: \"Authenticating...\" });\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 380,
+        "y": 100,
+        "wires": [
+            [
+                "eid_debug_hello_req",
+                "eid_http_hello"
+            ]
+        ]
+    },
+    {
+        "id": "eid_debug_hello_req",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_auth",
+        "name": "1. /hello REQUEST",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 620,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "eid_http_hello",
+        "type": "http request",
+        "z": "eid_flow_tab",
+        "g": "eid_group_auth",
+        "name": "POST /hello",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "https://hooks.energyid.eu/hello",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "headers": [],
+        "x": 610,
+        "y": 100,
+        "wires": [
+            [
+                "eid_debug_hello_resp",
+                "eid_func_store"
+            ]
+        ]
+    },
+    {
+        "id": "eid_debug_hello_resp",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_auth",
+        "name": "2. /hello RESPONSE (raw)",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 840,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "eid_func_store",
+        "type": "function",
+        "z": "eid_flow_tab",
+        "g": "eid_group_auth",
+        "name": "Parse & Store Credentials",
+        "func": "var body = msg.payload;\nvar status = msg.statusCode;\n\nif (status !== 200) {\n    node.status({ fill: \"red\", shape: \"dot\", text: \"HTTP \" + status });\n    node.warn(\"Hello failed: HTTP \" + status + \" - \" + JSON.stringify(body));\n    return [null, msg];\n}\n\nif (body.webhookUrl && body.headers) {\n    // Device is claimed - store credentials\n    flow.set(\"webhookUrl\", body.webhookUrl);\n    flow.set(\"webhookHeaders\", body.headers);\n    flow.set(\"recordName\", body.recordName);\n    flow.set(\"recordNumber\", body.recordNumber);\n    flow.set(\"uploadInterval\", body.webhookPolicy ? body.webhookPolicy.uploadInterval : 60);\n    flow.set(\"claim_retries\", 0);\n\n    node.status({ fill: \"green\", shape: \"dot\", text: \"OK - \" + body.recordName });\n\n    // Build a clean summary for debug\n    msg.parsed = {\n        webhookUrl: body.webhookUrl,\n        authorization: body.headers.authorization ? body.headers.authorization.substring(0, 60) + \"...\" : \"MISSING\",\n        \"x-twin-id\": body.headers[\"x-twin-id\"],\n        recordName: body.recordName,\n        recordNumber: body.recordNumber,\n        uploadInterval: body.webhookPolicy ? body.webhookPolicy.uploadInterval : \"unknown\"\n    };\n\n    return [msg, null];\n} else {\n    // Device not claimed\n    node.status({ fill: \"yellow\", shape: \"ring\", text: \"Claim required\" });\n    return [null, msg];\n}",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 850,
+        "y": 100,
+        "wires": [
+            [
+                "eid_debug_parsed"
+            ],
+            [
+                "eid_debug_claim"
+            ]
+        ]
+    },
+    {
+        "id": "eid_debug_parsed",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_auth",
+        "name": "3. Parsed Credentials",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "parsed",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1090,
+        "y": 80,
+        "wires": []
+    },
+    {
+        "id": "eid_debug_claim",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_auth",
+        "name": "CLAIM DEVICE (see claimUrl)",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "payload.claimUrl",
+        "statusType": "auto",
+        "x": 1110,
+        "y": 120,
+        "wires": [
+            [
+                "eid_claim_delay"
+            ]
+        ]
+    },
+    {
+        "id": "eid_claim_delay",
+        "type": "delay",
+        "z": "eid_flow_tab",
+        "g": "eid_group_auth",
+        "name": "Wait 30s for claim",
+        "pauseType": "delay",
+        "timeout": "30",
+        "timeoutUnits": "seconds",
+        "rate": "1",
+        "nbRateUnits": "1",
+        "rateUnits": "second",
+        "randomFirst": "1",
+        "randomLast": "5",
+        "randomUnits": "seconds",
+        "drop": false,
+        "allowrate": false,
+        "outputs": 1,
+        "x": 970,
+        "y": 200,
+        "wires": [
+            [
+                "eid_claim_counter"
+            ]
+        ]
+    },
+    {
+        "id": "eid_claim_counter",
+        "type": "function",
+        "z": "eid_flow_tab",
+        "g": "eid_group_auth",
+        "name": "Claim Retry Counter",
+        "func": "var retries = flow.get(\"claim_retries\") || 0;\nretries++;\nflow.set(\"claim_retries\", retries);\n\nif (retries > 20) {\n    node.status({ fill: \"red\", shape: \"dot\", text: \"Max retries (\" + retries + \")\" });\n    node.warn(\"Claim retry limit reached. Claim your device at the claimUrl shown in the debug panel.\");\n    return null;\n}\n\nnode.status({ fill: \"yellow\", shape: \"ring\", text: \"Retry \" + retries + \"/20\" });\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 770,
+        "y": 240,
+        "wires": [
+            [
+                "eid_func_provisioning"
+            ]
+        ]
+    },
+    {
+        "id": "eid_comment_data",
+        "type": "comment",
+        "z": "eid_flow_tab",
+        "g": "eid_group_data",
+        "name": "POST sensor data to webhookUrl. Edit the payload in 'Build Data POST'. 401 triggers re-auth via link node.",
+        "info": "Predefined metric keys: el, gas, pv, water, etc.\nts = unix timestamp in seconds (mandatory)\n\nThe authorization header from /hello is passed through AS-IS.\nDo NOT decode, re-encode, or hardcode it.",
+        "x": 440,
+        "y": 340,
+        "wires": []
+    },
+    {
+        "id": "eid_inject_data",
+        "type": "inject",
+        "z": "eid_flow_tab",
+        "g": "eid_group_data",
+        "name": "Send Test Data",
+        "props": [],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 110,
+        "y": 400,
+        "wires": [
+            [
+                "eid_func_build_data"
+            ]
+        ]
+    },
+    {
+        "id": "eid_func_build_data",
+        "type": "function",
+        "z": "eid_flow_tab",
+        "g": "eid_group_data",
+        "name": "Build Data POST",
+        "func": "var url = flow.get(\"webhookUrl\");\nvar hdrs = flow.get(\"webhookHeaders\");\n\nif (!url || !hdrs) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"Not authenticated\" });\n    node.error(\"Not authenticated yet - click Authenticate first\");\n    return null;\n}\n\n// Set URL from stored /hello response\nmsg.url = url;\n\n// Pass through auth headers exactly as received from /hello\nmsg.headers = {\n    \"authorization\": hdrs[\"authorization\"],\n    \"x-twin-id\": hdrs[\"x-twin-id\"],\n    \"Content-Type\": \"application/json\"\n};\n\n// =============================================\n// EDIT YOUR SENSOR DATA BELOW\n// Predefined keys: el, gas, pv, water, etc.\n// ts = unix timestamp in seconds (mandatory)\n// =============================================\nmsg.payload = {\n    \"ts\": Math.floor(Date.now() / 1000),\n    \"gas\": 456\n};\n\nnode.status({ fill: \"blue\", shape: \"dot\", text: \"Sending to \" + url.substring(0, 40) + \"...\" });\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 320,
+        "y": 400,
+        "wires": [
+            [
+                "eid_debug_data_req",
+                "eid_http_data"
+            ]
+        ]
+    },
+    {
+        "id": "eid_debug_data_req",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_data",
+        "name": "4. Data POST REQUEST",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 560,
+        "y": 360,
+        "wires": []
+    },
+    {
+        "id": "eid_http_data",
+        "type": "http request",
+        "z": "eid_flow_tab",
+        "g": "eid_group_data",
+        "name": "POST Data",
+        "method": "POST",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "headers": [],
+        "x": 550,
+        "y": 400,
+        "wires": [
+            [
+                "eid_debug_data_resp",
+                "eid_func_check"
+            ]
+        ]
+    },
+    {
+        "id": "eid_debug_data_resp",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_data",
+        "name": "5. Data POST RESPONSE (raw)",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 800,
+        "y": 360,
+        "wires": []
+    },
+    {
+        "id": "eid_func_check",
+        "type": "function",
+        "z": "eid_flow_tab",
+        "g": "eid_group_data",
+        "name": "Check Response",
+        "func": "var code = msg.statusCode;\n\nmsg.result = {\n    statusCode: code,\n    body: msg.payload,\n    url: msg.url || \"(from msg.url)\"\n};\n\nif (code === 201 || code === 200) {\n    node.status({ fill: \"green\", shape: \"dot\", text: \"OK (\" + code + \")\" });\n    return [msg, null, null];\n}\n\nif (code === 401) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"401 - Re-authenticating...\" });\n    node.warn(\"Token expired - auto re-authenticating...\");\n    flow.set(\"webhookUrl\", null);\n    flow.set(\"webhookHeaders\", null);\n    return [null, msg, msg];\n}\n\nif (code === 400) {\n    node.status({ fill: \"orange\", shape: \"dot\", text: \"400 - Bad payload\" });\n    node.warn(\"Bad request - check your payload format: \" + JSON.stringify(msg.payload));\n    return [null, msg, null];\n}\n\nif (code === 429) {\n    node.status({ fill: \"orange\", shape: \"ring\", text: \"429 - Rate limited\" });\n    node.warn(\"Rate limited! Upload interval: \" + flow.get(\"uploadInterval\") + \"s\");\n    return [null, msg, null];\n}\n\nnode.status({ fill: \"red\", shape: \"dot\", text: \"Error \" + code });\nnode.warn(\"HTTP \" + code + \": \" + JSON.stringify(msg.payload));\nreturn [null, msg, null];",
+        "outputs": 3,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 770,
+        "y": 400,
+        "wires": [
+            [
+                "eid_debug_ok"
+            ],
+            [
+                "eid_debug_err"
+            ],
+            [
+                "eid_debug_err",
+                "eid_link_out_reauth_data"
+            ]
+        ]
+    },
+    {
+        "id": "eid_debug_ok",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_data",
+        "name": "6. SUCCESS",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "result",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 960,
+        "y": 380,
+        "wires": []
+    },
+    {
+        "id": "eid_debug_err",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_data",
+        "name": "6. ERROR",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "result",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 950,
+        "y": 420,
+        "wires": []
+    },
+    {
+        "id": "eid_link_out_reauth_data",
+        "type": "link out",
+        "z": "eid_flow_tab",
+        "g": "eid_group_data",
+        "name": "401 > Re-Auth",
+        "mode": "link",
+        "links": [
+            "eid_link_in_reauth"
+        ],
+        "x": 1105,
+        "y": 440,
+        "wires": []
+    },
+    {
+        "id": "eid_batch_comment_step3",
+        "type": "comment",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "Collect sensor readings into buffer, upload as JSON array on clock interval. Avoids 429 rate limits.",
+        "info": "Sensor readings are buffered every 10s.\nBuffer is flushed and sent every 60s as a JSON array.\nAdjust intervals to match your uploadInterval from /hello.",
+        "x": 420,
+        "y": 560,
+        "wires": []
+    },
+    {
+        "id": "eid_batch_inject_sensor",
+        "type": "inject",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "Simulated Sensor (10s)",
+        "props": [],
+        "repeat": "10",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 130,
+        "y": 620,
+        "wires": [
+            [
+                "eid_batch_func_collect"
+            ]
+        ]
+    },
+    {
+        "id": "eid_batch_func_collect",
+        "type": "function",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "Collect Reading",
+        "func": "// Simulate a sensor reading (replace with your actual sensor input)\nvar reading = {\n    \"ts\": Math.floor(Date.now() / 1000),\n    \"el\": Math.round(Math.random() * 100 + 12300),\n    \"gas\": Math.round(Math.random() * 10 + 450)\n};\n\n// Add to buffer\nvar buffer = flow.get(\"batch_buffer\") || [];\nbuffer.push(reading);\nflow.set(\"batch_buffer\", buffer);\n\nnode.status({ fill: \"blue\", shape: \"ring\", text: buffer.length + \" readings buffered\" });\nmsg.payload = reading;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 350,
+        "y": 620,
+        "wires": [
+            [
+                "eid_batch_debug_buffered"
+            ]
+        ]
+    },
+    {
+        "id": "eid_batch_debug_buffered",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "7. Reading Buffered",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 580,
+        "y": 580,
+        "wires": []
+    },
+    {
+        "id": "eid_batch_inject_clock",
+        "type": "inject",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "Upload Clock (60s)",
+        "props": [],
+        "repeat": "60",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 120,
+        "y": 700,
+        "wires": [
+            [
+                "eid_batch_func_build"
+            ]
+        ]
+    },
+    {
+        "id": "eid_batch_func_build",
+        "type": "function",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "Build Batch Payload",
+        "func": "var url = flow.get(\"webhookUrl\");\nvar hdrs = flow.get(\"webhookHeaders\");\n\nif (!url || !hdrs) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"Not authenticated\" });\n    node.error(\"Not authenticated - run Authenticate first\");\n    return null;\n}\n\nvar buffer = flow.get(\"batch_buffer\") || [];\nif (buffer.length === 0) {\n    node.status({ fill: \"grey\", shape: \"ring\", text: \"Buffer empty\" });\n    return null;\n}\n\n// Clear buffer before sending\nflow.set(\"batch_buffer\", []);\n\nmsg.url = url;\nmsg.headers = {\n    \"authorization\": hdrs[\"authorization\"],\n    \"x-twin-id\": hdrs[\"x-twin-id\"],\n    \"Content-Type\": \"application/json\"\n};\n\n// Send as array of readings - each with its own timestamp\nmsg.payload = buffer;\n\nnode.status({ fill: \"blue\", shape: \"dot\", text: \"Sending \" + buffer.length + \" readings...\" });\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 340,
+        "y": 700,
+        "wires": [
+            [
+                "eid_batch_debug_req",
+                "eid_batch_http_post"
+            ]
+        ]
+    },
+    {
+        "id": "eid_batch_debug_req",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "8. Batch REQUEST",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 580,
+        "y": 660,
+        "wires": []
+    },
+    {
+        "id": "eid_batch_http_post",
+        "type": "http request",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "POST Batch",
+        "method": "POST",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "headers": [],
+        "x": 580,
+        "y": 700,
+        "wires": [
+            [
+                "eid_batch_debug_resp",
+                "eid_batch_func_check"
+            ]
+        ]
+    },
+    {
+        "id": "eid_batch_debug_resp",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "9. Batch RESPONSE",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 800,
+        "y": 660,
+        "wires": []
+    },
+    {
+        "id": "eid_batch_func_check",
+        "type": "function",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "Check Batch Response",
+        "func": "var code = msg.statusCode;\nmsg.result = {\n    statusCode: code,\n    body: msg.payload\n};\n\nif (code === 201 || code === 200) {\n    node.status({ fill: \"green\", shape: \"dot\", text: \"Batch OK (\" + code + \")\" });\n    return [msg, null, null];\n}\nif (code === 401) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"401 - Re-authenticating...\" });\n    node.warn(\"Token expired - auto re-authenticating...\");\n    flow.set(\"webhookUrl\", null);\n    flow.set(\"webhookHeaders\", null);\n    return [null, msg, msg];\n}\nif (code === 429) {\n    node.status({ fill: \"orange\", shape: \"ring\", text: \"429 - Rate limited\" });\n    node.warn(\"Rate limited! Increase upload interval. Current: \" + flow.get(\"uploadInterval\") + \"s\");\n    return [null, msg, null];\n}\nnode.status({ fill: \"red\", shape: \"dot\", text: \"Error \" + code });\nreturn [null, msg, null];",
+        "outputs": 3,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 800,
+        "y": 700,
+        "wires": [
+            [
+                "eid_batch_debug_ok"
+            ],
+            [
+                "eid_batch_debug_err"
+            ],
+            [
+                "eid_batch_debug_err",
+                "eid_link_out_reauth_batch"
+            ]
+        ]
+    },
+    {
+        "id": "eid_batch_debug_ok",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "10. Batch SUCCESS",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "result",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1010,
+        "y": 680,
+        "wires": []
+    },
+    {
+        "id": "eid_batch_debug_err",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "10. Batch ERROR",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "result",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1010,
+        "y": 720,
+        "wires": []
+    },
+    {
+        "id": "eid_link_out_reauth_batch",
+        "type": "link out",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "401 > Re-Auth",
+        "mode": "link",
+        "links": [
+            "eid_link_in_reauth"
+        ],
+        "x": 1105,
+        "y": 760,
+        "wires": []
+    },
+    {
+        "id": "eid_batch_comment_bottom",
+        "type": "comment",
+        "z": "eid_flow_tab",
+        "g": "eid_group_batch",
+        "name": "Sensor readings buffered every 10s, uploaded every 60s as JSON array. Adjust to match your uploadInterval.",
+        "info": "",
+        "x": 400,
+        "y": 780,
+        "wires": []
+    },
+    {
+        "id": "eid_d2_comment",
+        "type": "comment",
+        "z": "eid_flow_tab",
+        "g": "eid_group_device2",
+        "name": "Same provisioning key/secret, different deviceId. Each device gets claimed to its own dossier independently.",
+        "info": "Credentials stored in separate flow context keys (device2_webhookUrl, device2_webhookHeaders)\nso they don't collide with Device 1.",
+        "x": 420,
+        "y": 860,
+        "wires": []
+    },
+    {
+        "id": "eid_d2_inject_auth",
+        "type": "inject",
+        "z": "eid_flow_tab",
+        "g": "eid_group_device2",
+        "name": "Auth Device 2",
+        "props": [],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 110,
+        "y": 920,
+        "wires": [
+            [
+                "eid_d2_func_provisioning"
+            ]
+        ]
+    },
+    {
+        "id": "eid_d2_func_provisioning",
+        "type": "function",
+        "z": "eid_flow_tab",
+        "g": "eid_group_device2",
+        "name": "Device 2 Credentials",
+        "func": "msg.headers = {\n    \"Content-Type\": \"application/json\",\n    \"X-Provisioning-Key\": env.get(\"ENERGYID_PROVISIONING_KEY\"),\n    \"X-Provisioning-Secret\": env.get(\"ENERGYID_PROVISIONING_SECRET\")\n};\n\n// Different deviceId for the second device\nmsg.payload = {\n    \"deviceId\": \"nodered_device_002\",\n    \"deviceName\": \"Node-RED Device 2\"\n};\n\nmsg.url = \"https://hooks.energyid.eu/hello\";\n\nnode.status({ fill: \"blue\", shape: \"dot\", text: \"Authenticating Device 2...\" });\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 320,
+        "y": 920,
+        "wires": [
+            [
+                "eid_d2_http_hello"
+            ]
+        ]
+    },
+    {
+        "id": "eid_d2_http_hello",
+        "type": "http request",
+        "z": "eid_flow_tab",
+        "g": "eid_group_device2",
+        "name": "POST /hello (Device 2)",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "https://hooks.energyid.eu/hello",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "headers": [],
+        "x": 540,
+        "y": 920,
+        "wires": [
+            [
+                "eid_d2_func_store"
+            ]
+        ]
+    },
+    {
+        "id": "eid_d2_func_store",
+        "type": "function",
+        "z": "eid_flow_tab",
+        "g": "eid_group_device2",
+        "name": "Store Device 2 Creds",
+        "func": "var body = msg.payload;\nvar status = msg.statusCode;\n\nif (status !== 200) {\n    node.status({ fill: \"red\", shape: \"dot\", text: \"HTTP \" + status });\n    node.warn(\"Device 2 hello failed: HTTP \" + status);\n    return [null, msg];\n}\n\nif (body.webhookUrl && body.headers) {\n    flow.set(\"device2_webhookUrl\", body.webhookUrl);\n    flow.set(\"device2_webhookHeaders\", body.headers);\n    node.status({ fill: \"green\", shape: \"dot\", text: \"OK - \" + (body.recordName || \"claimed\") });\n    msg.parsed = {\n        webhookUrl: body.webhookUrl,\n        recordName: body.recordName,\n        recordNumber: body.recordNumber\n    };\n    return [msg, null];\n} else {\n    node.status({ fill: \"yellow\", shape: \"ring\", text: \"Claim required\" });\n    return [null, msg];\n}",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 750,
+        "y": 920,
+        "wires": [
+            [
+                "eid_d2_debug_ok"
+            ],
+            [
+                "eid_d2_debug_claim"
+            ]
+        ]
+    },
+    {
+        "id": "eid_d2_debug_ok",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_device2",
+        "name": "Device 2 Auth OK",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "parsed",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 970,
+        "y": 900,
+        "wires": []
+    },
+    {
+        "id": "eid_d2_debug_claim",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_device2",
+        "name": "Device 2 CLAIM",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 970,
+        "y": 940,
+        "wires": []
+    },
+    {
+        "id": "eid_d2_inject_data",
+        "type": "inject",
+        "z": "eid_flow_tab",
+        "g": "eid_group_device2",
+        "name": "Send Device 2 Data",
+        "props": [],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 130,
+        "y": 1000,
+        "wires": [
+            [
+                "eid_d2_func_build"
+            ]
+        ]
+    },
+    {
+        "id": "eid_d2_func_build",
+        "type": "function",
+        "z": "eid_flow_tab",
+        "g": "eid_group_device2",
+        "name": "Build Device 2 Data",
+        "func": "var url = flow.get(\"device2_webhookUrl\");\nvar hdrs = flow.get(\"device2_webhookHeaders\");\n\nif (!url || !hdrs) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"Device 2 not authenticated\" });\n    node.error(\"Device 2 not authenticated - click Auth Device 2 first\");\n    return null;\n}\n\nmsg.url = url;\nmsg.headers = {\n    \"authorization\": hdrs[\"authorization\"],\n    \"x-twin-id\": hdrs[\"x-twin-id\"],\n    \"Content-Type\": \"application/json\"\n};\n\nmsg.payload = {\n    \"ts\": Math.floor(Date.now() / 1000),\n    \"el\": 789\n};\n\nnode.status({ fill: \"blue\", shape: \"dot\", text: \"Sending Device 2 data...\" });\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 340,
+        "y": 1000,
+        "wires": [
+            [
+                "eid_d2_http_data"
+            ]
+        ]
+    },
+    {
+        "id": "eid_d2_http_data",
+        "type": "http request",
+        "z": "eid_flow_tab",
+        "g": "eid_group_device2",
+        "name": "POST Device 2 Data",
+        "method": "POST",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "headers": [],
+        "x": 550,
+        "y": 1000,
+        "wires": [
+            [
+                "eid_d2_debug_result"
+            ]
+        ]
+    },
+    {
+        "id": "eid_d2_debug_result",
+        "type": "debug",
+        "z": "eid_flow_tab",
+        "g": "eid_group_device2",
+        "name": "Device 2 Result",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 770,
+        "y": 1000,
+        "wires": []
+    },
+    {
+        "id": "eid_d2_comment_bottom",
+        "type": "comment",
+        "z": "eid_flow_tab",
+        "g": "eid_group_device2",
+        "name": "Same fleet key, different deviceId per device. Each device gets its own dossier after claiming.",
+        "info": "",
+        "x": 380,
+        "y": 1040,
+        "wires": []
+    }
+]
