@@ -1,0 +1,898 @@
+[
+  {
+    "id": "mqtt_bridge_tab",
+    "type": "tab",
+    "label": "MQTT to EnergyID Webhook Bridge",
+    "disabled": false,
+    "info": "MQTT to EnergyID incoming webhook bridge.\n\nSubscribes to configured MQTT topic families, auto-discovers devices from MQTT topics, registers each device against EnergyID via /hello with a deterministic claimCode, and batches readings to the per-device webhookUrl.\n\nState lives in two global keys:\n  global.eid.registry   - { deviceId: { ...meta, claimed, headers, webhookUrl } }\n  global.eid.buffers    - { deviceId: [ {ts, el}, ... ] }\n\nRequired environment variables:\n  MQTT_BROKER_HOST=<mqtt-broker-host>\n  MQTT_BROKER_PORT=8883\n  MQTT_BROKER_USER=<mqtt-user>\n  MQTT_BROKER_PASSWORD=<mqtt-password, use in broker credentials as ${MQTT_BROKER_PASSWORD}>\n  ENERGYID_PROVISIONING_KEY=<EnergyID provisioning key>\n  ENERGYID_PROVISIONING_SECRET=<EnergyID provisioning secret>\n\nOptional environment variables:\n  EID_DEVICE_ALLOWLIST=                  (CSV of deviceIds; empty = allow all)\n  EID_DEVICE_MAPPINGS_JSON=              (JSON mapping override)\n  EID_BATCH_INTERVAL_S=60                (flush timer; each device still respects its upload policy, minimum 60s)\n  EID_HELLO_TICK_S=5                     (how often to process pending /hello work)\n  EID_HELLO_COOLDOWN_S=30\n  EID_HELLO_MAX_RETRIES=20\n  EID_CREDENTIAL_REFRESH_S=86400\n  EID_MAX_BUFFER_POINTS=5000\n  EID_MAX_BATCH_SIZE=1000\n\nDevice metric mapping is config-driven. Set EID_DEVICE_MAPPINGS_JSON to override defaults; see the comment node \"Metric mapping quick guide\" on the tab.\n\nImport note: the broker host and port use ${MQTT_BROKER_HOST} and ${MQTT_BROKER_PORT}. MQTT credentials are intentionally not exported; set the broker username/password after import, or use ${MQTT_BROKER_USER} and ${MQTT_BROKER_PASSWORD} in the broker credentials fields. Prefer global/process environment variables for real secrets, not flow-level values in JSON that may be shared later. Configure TLS/certificate options in the MQTT broker node if your broker requires custom settings.\n",
+    "env": [
+      {
+        "name": "MQTT_BROKER_HOST",
+        "value": "",
+        "type": "str"
+      },
+      {
+        "name": "MQTT_BROKER_PORT",
+        "value": "8883",
+        "type": "str"
+      },
+      {
+        "name": "MQTT_BROKER_USER",
+        "value": "",
+        "type": "str"
+      },
+      {
+        "name": "MQTT_BROKER_PASSWORD",
+        "value": "",
+        "type": "str"
+      },
+      {
+        "name": "ENERGYID_PROVISIONING_KEY",
+        "value": "",
+        "type": "str"
+      },
+      {
+        "name": "ENERGYID_PROVISIONING_SECRET",
+        "value": "",
+        "type": "str"
+      },
+      {
+        "name": "EID_DEVICE_ALLOWLIST",
+        "value": "",
+        "type": "str"
+      },
+      {
+        "name": "EID_BATCH_INTERVAL_S",
+        "value": "60",
+        "type": "str"
+      },
+      {
+        "name": "EID_HELLO_TICK_S",
+        "value": "5",
+        "type": "str"
+      },
+      {
+        "name": "EID_HELLO_COOLDOWN_S",
+        "value": "30",
+        "type": "str"
+      },
+      {
+        "name": "EID_HELLO_MAX_RETRIES",
+        "value": "20",
+        "type": "str"
+      },
+      {
+        "name": "EID_CREDENTIAL_REFRESH_S",
+        "value": "86400",
+        "type": "str"
+      },
+      {
+        "name": "EID_DEVICE_MAPPINGS_JSON",
+        "value": "",
+        "type": "str"
+      },
+      {
+        "name": "EID_MAX_BUFFER_POINTS",
+        "value": "5000",
+        "type": "str"
+      },
+      {
+        "name": "EID_MAX_BATCH_SIZE",
+        "value": "1000",
+        "type": "str"
+      }
+    ]
+  },
+  {
+    "id": "mqtt_bridge_g_subscribe_t",
+    "type": "group",
+    "z": "mqtt_bridge_tab",
+    "name": "STEP 1: Subscribe & route MQTT topics",
+    "style": {
+      "stroke": "#3f6db4",
+      "fill": "#e8f0fe",
+      "fill-opacity": "0.3",
+      "label": true,
+      "label-position": "nw",
+      "color": "#3f6db4"
+    },
+    "nodes": [
+      "mqtt_bridge_mqtt_tasmota_t",
+      "mqtt_bridge_mqtt_shelly_energy_t",
+      "mqtt_bridge_mqtt_teleinfo_t",
+      "mqtt_bridge_func_router_t",
+      "mqtt_bridge_debug_router_t",
+      "mqtt_bridge_sim_inject_t",
+      "mqtt_bridge_comment_mapping_help_t"
+    ],
+    "x": 54,
+    "y": 39,
+    "w": 1082,
+    "h": 232
+  },
+  {
+    "id": "mqtt_bridge_g_hello_t",
+    "type": "group",
+    "z": "mqtt_bridge_tab",
+    "name": "STEP 2: /hello queue (auto-register + claim retry)",
+    "style": {
+      "stroke": "#2e7d32",
+      "fill": "#e8f5e9",
+      "fill-opacity": "0.3",
+      "label": true,
+      "color": "#2e7d32"
+    },
+    "nodes": [
+      "mqtt_bridge_inject_hello_tick_t",
+      "mqtt_bridge_func_hello_pop_t",
+      "mqtt_bridge_http_hello_t",
+      "mqtt_bridge_func_hello_store_t",
+      "mqtt_bridge_link_in_reauth_t",
+      "mqtt_bridge_debug_hello_t"
+    ],
+    "x": 34,
+    "y": 299,
+    "w": 1292,
+    "h": 142
+  },
+  {
+    "id": "mqtt_bridge_g_batch_t",
+    "type": "group",
+    "z": "mqtt_bridge_tab",
+    "name": "STEP 3: Per-device batch upload",
+    "style": {
+      "stroke": "#e65100",
+      "fill": "#fff3e0",
+      "fill-opacity": "0.3",
+      "label": true,
+      "label-position": "nw",
+      "color": "#e65100"
+    },
+    "nodes": [
+      "mqtt_bridge_inject_batch_tick_t",
+      "mqtt_bridge_func_batch_fanout_t",
+      "mqtt_bridge_http_batch_post_t",
+      "mqtt_bridge_func_batch_resp_t",
+      "mqtt_bridge_link_out_reauth_t",
+      "mqtt_bridge_debug_batch_t"
+    ],
+    "x": 34,
+    "y": 499,
+    "w": 1472,
+    "h": 142
+  },
+  {
+    "id": "mqtt_bridge_g_ops_t",
+    "type": "group",
+    "z": "mqtt_bridge_tab",
+    "name": "STEP 4: Ops (registry report, unclaimed list, reset)",
+    "style": {
+      "stroke": "#6a1b9a",
+      "fill": "#f3e5f5",
+      "fill-opacity": "0.3",
+      "label": true,
+      "label-position": "nw",
+      "color": "#6a1b9a"
+    },
+    "nodes": [
+      "mqtt_bridge_inject_report_t",
+      "mqtt_bridge_func_report_t",
+      "mqtt_bridge_debug_report_t",
+      "mqtt_bridge_inject_unclaimed_t",
+      "mqtt_bridge_func_unclaimed_t",
+      "mqtt_bridge_debug_unclaimed_t",
+      "mqtt_bridge_inject_reset_t",
+      "mqtt_bridge_func_reset_t",
+      "mqtt_bridge_debug_reset_t",
+      "mqtt_bridge_inject_refresh_device_t",
+      "mqtt_bridge_inject_unmapped_t",
+      "mqtt_bridge_func_unmapped_t",
+      "mqtt_bridge_debug_unmapped_t",
+      "mqtt_bridge_inject_clear_unmapped_t",
+      "mqtt_bridge_func_clear_unmapped_t"
+    ],
+    "x": 34,
+    "y": 719,
+    "w": 882,
+    "h": 322
+  },
+  {
+    "id": "mqtt_bridge_mqtt_broker_t",
+    "type": "mqtt-broker",
+    "name": "MQTT broker",
+    "broker": "${MQTT_BROKER_HOST}",
+    "port": "${MQTT_BROKER_PORT}",
+    "tls": "",
+    "clientid": "energyid-mqtt-bridge",
+    "autoConnect": true,
+    "usetls": true,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthRetain": "false",
+    "birthPayload": "",
+    "birthMsg": {},
+    "closeTopic": "",
+    "closeQos": "0",
+    "closeRetain": "false",
+    "closePayload": "",
+    "closeMsg": {},
+    "willTopic": "",
+    "willQos": "0",
+    "willRetain": "false",
+    "willPayload": "",
+    "willMsg": {},
+    "userProps": "",
+    "sessionExpiry": ""
+  },
+  {
+    "id": "mqtt_bridge_mqtt_tasmota_t",
+    "type": "mqtt in",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_subscribe_t",
+    "name": "tele/+/SENSOR (Tasmota)",
+    "topic": "tele/+/SENSOR",
+    "qos": "0",
+    "datatype": "json",
+    "broker": "mqtt_bridge_mqtt_broker_t",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 210,
+    "y": 80,
+    "wires": [
+      [
+        "mqtt_bridge_func_router_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_mqtt_shelly_energy_t",
+    "type": "mqtt in",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_subscribe_t",
+    "name": "shellies/+/relay/+/energy",
+    "topic": "shellies/+/relay/+/energy",
+    "qos": "0",
+    "datatype": "auto",
+    "broker": "mqtt_bridge_mqtt_broker_t",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 220,
+    "y": 130,
+    "wires": [
+      [
+        "mqtt_bridge_func_router_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_mqtt_teleinfo_t",
+    "type": "mqtt in",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_subscribe_t",
+    "name": "xky/+/tele/SENSOR (Teleinfo)",
+    "topic": "xky/+/tele/SENSOR",
+    "qos": "0",
+    "datatype": "json",
+    "broker": "mqtt_bridge_mqtt_broker_t",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 230,
+    "y": 180,
+    "wires": [
+      [
+        "mqtt_bridge_func_router_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_func_router_t",
+    "type": "function",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_subscribe_t",
+    "name": "Route + extract + register + buffer",
+    "func": "// Config-driven MQTT normalizer.\n// Default mappings cover common MQTT payloads. Override with EID_DEVICE_MAPPINGS_JSON.\n// Mapping format:\n// [{\"topic\":\"tele/+/SENSOR\",\"deviceId\":\"tasmota-${1}\",\"deviceName\":\"Tasmota ${1}\",\"deviceType\":\"tasmota\",\"channels\":[{\"key\":\"el\",\"path\":\"ENERGY.Total\",\"scale\":1}]}]\n\nconst topic = msg.topic || \"\";\nconst payload = msg.payload;\nconst allowRaw = (env.get(\"EID_DEVICE_ALLOWLIST\") || \"\").trim();\nconst allowlist = allowRaw ? allowRaw.split(\",\").map(s => s.trim()).filter(Boolean) : [];\n// Default 5000 points covers 1 Hz data buffered for over an hour, or 15 min intervals with margin.\nconst maxBufferPoints = parseInt(env.get(\"EID_MAX_BUFFER_POINTS\") || \"5000\", 10);\n\nconst defaultMappings = [\n    {\n        topic: \"tele/+/SENSOR\",\n        deviceId: \"tasmota-${1}\",\n        deviceName: \"Tasmota ${1}\",\n        deviceType: \"tasmota\",\n        channels: [\n            { key: \"el\", path: \"ENERGY.Total\", scale: 1 }\n            // Optional examples the operator can enable in EID_DEVICE_MAPPINGS_JSON:\n            // { key: \"pwr\", path: \"ENERGY.Power\", scale: 0.001 } // W -> kW\n        ]\n    },\n    {\n        topic: \"shellies/+/relay/+/energy\",\n        deviceId: \"shelly-${1}-r${2}\",\n        deviceName: \"Shelly ${1} relay ${2}\",\n        deviceType: \"shelly\",\n        channels: [\n            { key: \"el\", path: \"$payload\", scale: 1 / 60000 } // watt-minutes -> kWh\n        ]\n    },\n    {\n        topic: \"xky/+/tele/SENSOR\",\n        deviceId: \"teleinfo-${1}\",\n        deviceName: \"Teleinfo ${1}\",\n        deviceType: \"teleinfo\",\n        channels: [\n            { key: \"el\", path: \"TIC.BASE\", scale: 0.001, optional: true },\n            { key: \"el\", path: \"TIC.EAST\", scale: 0.001, optional: true },\n            { key: \"el\", paths: [\"TIC.HCHC\", \"TIC.HCHP\"], combine: \"sum\", scale: 0.001, optional: true },\n            { key: \"el\", path: \"BASE\", scale: 0.001, optional: true },\n            { key: \"el\", path: \"EAST\", scale: 0.001, optional: true },\n            { key: \"el\", paths: [\"HCHC\", \"HCHP\"], combine: \"sum\", scale: 0.001, optional: true }\n        ]\n    }\n];\n\nfunction parseMappings() {\n    const raw = (env.get(\"EID_DEVICE_MAPPINGS_JSON\") || \"\").trim();\n    if (!raw) return defaultMappings;\n    try {\n        const parsed = JSON.parse(raw);\n        if (!Array.isArray(parsed)) throw new Error(\"mapping root must be an array\");\n        return parsed;\n    } catch (e) {\n        node.warn(`Invalid EID_DEVICE_MAPPINGS_JSON, using defaults: ${e.message}`);\n        return defaultMappings;\n    }\n}\n\nfunction topicMatch(pattern, actual) {\n    const pp = String(pattern || \"\").split(\"/\");\n    const aa = String(actual || \"\").split(\"/\");\n    const captures = [];\n    for (let i = 0, j = 0; i < pp.length; i++, j++) {\n        const p = pp[i];\n        if (p === \"#\") return { ok: true, captures };\n        if (j >= aa.length) return { ok: false };\n        if (p === \"+\") { captures.push(aa[j]); continue; }\n        if (p !== aa[j]) return { ok: false };\n    }\n    return { ok: pp.length === aa.length, captures };\n}\n\nfunction applyTemplate(template, captures) {\n    return String(template || \"\").replace(/\\$\\{(\\d+)\\}/g, (_, n) => captures[Number(n) - 1] || \"\");\n}\n\nfunction getPath(obj, path) {\n    if (path === \"$payload\") return obj;\n    return String(path || \"\").split(\".\").reduce((acc, part) => {\n        if (acc === null || acc === undefined) return undefined;\n        return acc[part];\n    }, obj);\n}\n\nfunction numeric(v) {\n    if (typeof v === \"number\") return isFinite(v) ? v : null;\n    if (typeof v === \"string\" && v.trim() !== \"\") {\n        const n = Number(v);\n        return isFinite(n) ? n : null;\n    }\n    return null;\n}\n\nfunction extractChannel(ch, payload) {\n    let value = null;\n    if (Array.isArray(ch.paths)) {\n        const vals = ch.paths.map(p => numeric(getPath(payload, p))).filter(v => v !== null);\n        if (vals.length === 0) return null;\n        value = ch.combine === \"sum\" ? vals.reduce((a, b) => a + b, 0) : vals[0];\n    } else {\n        value = numeric(getPath(payload, ch.path));\n    }\n    if (value === null) return null;\n    value = value * Number(ch.scale === undefined ? 1 : ch.scale) + Number(ch.offset || 0);\n    if (ch.min !== undefined && value < Number(ch.min)) return null;\n    if (ch.max !== undefined && value > Number(ch.max)) return null;\n    return value;\n}\n\nfunction rememberUnmapped(reason) {\n    const unmapped = global.get(\"eid.unmappedTopics\") || {};\n    const entry = unmapped[topic] || { topic, count: 0, firstSeenAt: Date.now() };\n    entry.count++;\n    entry.lastSeenAt = Date.now();\n    entry.reason = reason;\n    entry.sampleType = typeof payload;\n    if (payload && typeof payload === \"object\") entry.sampleKeys = Object.keys(payload).slice(0, 20);\n    unmapped[topic] = entry;\n    global.set(\"eid.unmappedTopics\", unmapped);\n    node.status({ fill: \"grey\", shape: \"ring\", text: `${topic}: ${reason}` });\n}\n\nfunction allow(id) { return allowlist.length === 0 || allowlist.includes(id); }\n\nconst mappings = parseMappings();\nlet match = null;\nfor (const mapping of mappings) {\n    const m = topicMatch(mapping.topic, topic);\n    if (m.ok) { match = { mapping, captures: m.captures }; break; }\n}\n\nif (!match) { rememberUnmapped(\"no mapping\"); return null; }\n\nconst mapping = match.mapping;\nconst captures = match.captures;\nconst deviceId = applyTemplate(mapping.deviceId, captures);\nconst deviceName = applyTemplate(mapping.deviceName || mapping.deviceId, captures);\nconst deviceType = mapping.deviceType || \"mqtt\";\nif (!deviceId) { rememberUnmapped(\"mapping produced empty deviceId\"); return null; }\nif (!allow(deviceId)) return null;\n\nconst readings = {};\nfor (const ch of (mapping.channels || [])) {\n    const key = ch.key;\n    if (!key) continue;\n    const value = extractChannel(ch, payload);\n    if (value === null) continue;\n    readings[key] = value;\n}\n\nif (Object.keys(readings).length === 0) {\n    rememberUnmapped(`${deviceId}: no mapped values`);\n    return null;\n}\n\nconst registry = global.get(\"eid.registry\") || {};\nlet entry = registry[deviceId];\nif (!entry) {\n    const cc = (mapping.claimCode ? applyTemplate(mapping.claimCode, captures) : deviceId.replace(/[^A-Za-z0-9]/g, \"\").slice(-6)).toUpperCase();\n    entry = {\n        deviceId, deviceType, deviceName,\n        claimCode: cc,\n        helloAttempts: 0,\n        helloLastTriedAt: 0,\n        webhookUrl: null,\n        headers: null,\n        recordName: null,\n        recordNumber: null,\n        claimUrl: null,\n        claimed: false,\n        discoveredAt: Date.now()\n    };\n    registry[deviceId] = entry;\n    global.set(\"eid.registry\", registry);\n    node.warn(`Discovered ${deviceId} (claimCode=${cc})`);\n}\nentry.lastSeenAt = Date.now();\nentry.lastTopic = topic;\nentry.lastReadings = readings;\nglobal.set(\"eid.registry\", registry);\n\nconst buffers = global.get(\"eid.buffers\") || {};\nbuffers[deviceId] = buffers[deviceId] || [];\nbuffers[deviceId].push(Object.assign({ ts: Math.floor(Date.now() / 1000) }, readings));\nif (buffers[deviceId].length > maxBufferPoints) buffers[deviceId].splice(0, buffers[deviceId].length - maxBufferPoints);\nglobal.set(\"eid.buffers\", buffers);\n\nconst summary = Object.keys(readings).map(k => `${k}=${Number(readings[k]).toFixed(3)}`).join(\", \");\nnode.status({\n    fill: entry.claimed ? \"green\" : \"yellow\",\n    shape: \"dot\",\n    text: `${deviceId} ${summary} (buf ${buffers[deviceId].length}, claimed=${entry.claimed})`\n});\n\nmsg.deviceId = deviceId;\nmsg.readings = readings;\nmsg.mapping = { topic: mapping.topic, deviceType };\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 730,
+    "y": 130,
+    "wires": [
+      [
+        "mqtt_bridge_debug_router_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_debug_router_t",
+    "type": "debug",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_subscribe_t",
+    "name": "router (low-volume)",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "deviceId",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 1000,
+    "y": 130,
+    "wires": []
+  },
+  {
+    "id": "mqtt_bridge_link_in_reauth_t",
+    "type": "link in",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_hello_t",
+    "name": "Re-auth (from batch 401)",
+    "links": [
+      "mqtt_bridge_link_out_reauth_t"
+    ],
+    "x": 125,
+    "y": 400,
+    "wires": [
+      [
+        "mqtt_bridge_func_hello_pop_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_inject_hello_tick_t",
+    "type": "inject",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_hello_t",
+    "name": "/hello tick (5s)",
+    "props": [],
+    "repeat": "5",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "3",
+    "topic": "",
+    "x": 160,
+    "y": 340,
+    "wires": [
+      [
+        "mqtt_bridge_func_hello_pop_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_func_hello_pop_t",
+    "type": "function",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_hello_t",
+    "name": "Pop next unclaimed device",
+    "func": "const cooldown = parseInt(env.get(\"EID_HELLO_COOLDOWN_S\") || \"30\", 10) * 1000;\nconst maxRetries = parseInt(env.get(\"EID_HELLO_MAX_RETRIES\") || \"20\", 10);\nconst refreshEvery = parseInt(env.get(\"EID_CREDENTIAL_REFRESH_S\") || \"86400\", 10) * 1000;\nconst now = Date.now();\nconst registry = global.get(\"eid.registry\") || {};\n\nfunction isForcedDeviceId(v) {\n    return typeof v === \"string\" && v.trim().length > 0 && registry[v.trim()];\n}\n\nlet target = null;\nlet reason = \"\";\nconst forcedId = isForcedDeviceId(msg.refreshDeviceId) ? msg.refreshDeviceId.trim()\n    : isForcedDeviceId(msg.payload) ? msg.payload.trim()\n    : null;\n\nif (forcedId) {\n    target = registry[forcedId];\n    reason = \"forced-refresh\";\n} else {\n    for (const k of Object.keys(registry)) {\n        const d = registry[k];\n        if (!d || d.claimed) continue;\n        if (d.helloAttempts >= maxRetries && (now - (d.helloLastTriedAt || 0)) < 3600000) continue;\n        if ((now - (d.helloLastTriedAt || 0)) < cooldown) continue;\n        target = d;\n        reason = \"claim\";\n        break;\n    }\n}\n\nif (!target) {\n    for (const k of Object.keys(registry)) {\n        const d = registry[k];\n        if (!d || !d.claimed) continue;\n        if ((now - (d.helloLastTriedAt || 0)) < cooldown) continue;\n        const lastRefresh = d.connectionRefreshedAt || d.claimedAt || d.discoveredAt || 0;\n        if ((now - lastRefresh) < refreshEvery) continue;\n        target = d;\n        reason = \"scheduled-refresh\";\n        break;\n    }\n}\n\nif (!target) {\n    node.status({ fill: \"grey\", shape: \"ring\", text: \"queue idle\" });\n    return null;\n}\n\ntarget.helloAttempts = (target.helloAttempts || 0) + 1;\ntarget.helloLastTriedAt = now;\nglobal.set(\"eid.registry\", registry);\n\nmsg.deviceId = target.deviceId;\nmsg.helloReason = reason;\nmsg.url = \"https://hooks.energyid.eu/hello\";\nmsg.method = \"POST\";\nmsg.headers = {\n    \"Content-Type\": \"application/json\",\n    \"X-Provisioning-Key\": env.get(\"ENERGYID_PROVISIONING_KEY\"),\n    \"X-Provisioning-Secret\": env.get(\"ENERGYID_PROVISIONING_SECRET\")\n};\nmsg.payload = {\n    deviceId: target.deviceId,\n    deviceName: target.deviceName,\n    claimCode: target.claimCode\n};\nnode.status({ fill: \"blue\", shape: \"dot\", text: `${reason} ${target.deviceId} #${target.helloAttempts}` });\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 410,
+    "y": 340,
+    "wires": [
+      [
+        "mqtt_bridge_http_hello_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_http_hello_t",
+    "type": "http request",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_hello_t",
+    "name": "POST /hello",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [],
+    "x": 650,
+    "y": 340,
+    "wires": [
+      [
+        "mqtt_bridge_func_hello_store_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_func_hello_store_t",
+    "type": "function",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_hello_t",
+    "name": "Store creds / capture claim URL",
+    "func": "const status = msg.statusCode;\nconst body = msg.payload || {};\nconst registry = global.get(\"eid.registry\") || {};\nconst dev = registry[msg.deviceId];\nif (!dev) return null;\n\nif (status !== 200 && status !== 201) {\n    dev.connectionRefreshError = `HTTP ${status}`;\n    global.set(\"eid.registry\", registry);\n    node.warn(`/hello ${msg.deviceId} -> HTTP ${status}: ${JSON.stringify(body).slice(0,200)}`);\n    msg.outcome = `HTTP ${status}`;\n    return msg;\n}\n\nif (body.webhookUrl && body.headers) {\n    dev.webhookUrl     = body.webhookUrl;\n    dev.headers        = body.headers;\n    dev.recordName     = body.recordName;\n    dev.recordNumber   = body.recordNumber;\n    dev.uploadInterval = Number((body.webhookPolicy && body.webhookPolicy.uploadInterval) || 60);\n    dev.claimed        = true;\n    dev.claimedAt      = dev.claimedAt || Date.now();\n    dev.connectionRefreshedAt = Date.now();\n    dev.connectionRefreshError = null;\n    dev.nextUploadAfter = 0;\n    global.set(\"eid.registry\", registry);\n    const endpoint = String(body.webhookUrl).includes(\"servicebus\") ? \"servicebus\" : \"webhook\";\n    node.status({ fill: \"green\", shape: \"dot\", text: `${endpoint} ${msg.deviceId} ${dev.uploadInterval}s` });\n    msg.outcome = `${msg.helloReason || \"hello\"} -> ${endpoint} ${dev.uploadInterval}s ${body.recordName}`;\n    return msg;\n}\n\nif (body.claimUrl || body.claimCode) {\n    dev.claimUrl  = body.claimUrl  || dev.claimUrl;\n    dev.claimCode = body.claimCode || dev.claimCode;\n    dev.claimed = false;\n    dev.webhookUrl = null;\n    dev.headers = null;\n    dev.connectionRefreshedAt = null;\n    global.set(\"eid.registry\", registry);\n    node.status({ fill: \"yellow\", shape: \"ring\", text: `pending ${msg.deviceId} (${dev.claimCode})` });\n    msg.outcome = `pending claim ${dev.claimCode}`;\n    return msg;\n}\n\nnode.warn(`/hello ${msg.deviceId}: unexpected body ${JSON.stringify(body).slice(0,200)}`);\nmsg.outcome = \"unexpected\";\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 900,
+    "y": 340,
+    "wires": [
+      [
+        "mqtt_bridge_debug_hello_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_debug_hello_t",
+    "type": "debug",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_hello_t",
+    "name": "/hello outcome",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "outcome",
+    "targetType": "msg",
+    "x": 1200,
+    "y": 340,
+    "wires": []
+  },
+  {
+    "id": "mqtt_bridge_inject_batch_tick_t",
+    "type": "inject",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_batch_t",
+    "name": "Scheduler tick (10s, per-device interval)",
+    "props": [],
+    "repeat": "10",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "10",
+    "topic": "",
+    "x": 240,
+    "y": 560,
+    "wires": [
+      [
+        "mqtt_bridge_func_batch_fanout_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_func_batch_fanout_t",
+    "type": "function",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_batch_t",
+    "name": "Fan-out one msg per claimed device with buffered readings",
+    "func": "const registry = global.get(\"eid.registry\") || {};\nconst buffers  = global.get(\"eid.buffers\")  || {};\nconst now = Date.now();\nconst maxBatchSize = parseInt(env.get(\"EID_MAX_BATCH_SIZE\") || \"1000\", 10);\n\nlet sent = 0;\nlet waiting = 0;\nfor (const k of Object.keys(registry)) {\n    const d = registry[k];\n    if (!d || !d.claimed || !d.webhookUrl || !d.headers) continue;\n    if (d.inflight) { waiting++; continue; }\n\n    const buf = buffers[k] || [];\n    if (buf.length === 0) continue;\n\n    // Minimum send cadence is 60s: devices may publish 1s/10s samples, but we batch them to avoid per-sample HTTP requests.\n    const intervalS = Math.max(60, Number(d.uploadInterval || 60));\n    const nextDue = Number(d.nextUploadAfter || 0);\n    if (now < nextDue) { waiting++; continue; }\n\n    const batch = buf.splice(0, maxBatchSize);\n    d.inflight = { batch, startedAt: now };\n    d.nextUploadAfter = now + intervalS * 1000;\n\n    node.send({\n        deviceId: k,\n        url: d.webhookUrl,\n        method: \"POST\",\n        headers: Object.assign({}, d.headers, { \"Content-Type\": \"application/json\" }),\n        payload: batch\n    });\n    sent++;\n}\n\nglobal.set(\"eid.registry\", registry);\nglobal.set(\"eid.buffers\", buffers);\nnode.status({\n    fill: sent ? \"blue\" : \"grey\",\n    shape: sent ? \"dot\" : \"ring\",\n    text: sent ? `sent ${sent} batches` : (waiting ? `waiting ${waiting}` : \"nothing to send\")\n});\nreturn null;",
+    "outputs": 1,
+    "x": 570,
+    "y": 560,
+    "wires": [
+      [
+        "mqtt_bridge_http_batch_post_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_http_batch_post_t",
+    "type": "http request",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_batch_t",
+    "name": "POST batch to webhookUrl",
+    "method": "use",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": true,
+    "headers": [],
+    "x": 910,
+    "y": 560,
+    "wires": [
+      [
+        "mqtt_bridge_func_batch_resp_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_func_batch_resp_t",
+    "type": "function",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_batch_t",
+    "name": "Check + handle 401",
+    "func": "const code = msg.statusCode;\nconst id   = msg.deviceId;\nconst registry = global.get(\"eid.registry\") || {};\nconst buffers  = global.get(\"eid.buffers\")  || {};\nconst maxBufferPoints = parseInt(env.get(\"EID_MAX_BUFFER_POINTS\") || \"5000\", 10);\nconst d = registry[id];\nconst inflight = d && d.inflight;\nconst batch = inflight && Array.isArray(inflight.batch) ? inflight.batch : [];\n\nmsg.result = { deviceId: id, statusCode: code, body: msg.payload, sentCount: batch.length };\n\nif (d) delete d.inflight;\n\nif (code === 200 || code === 201 || code === 202 || code === 204) {\n    if (d) {\n        d.lastUploadAt = Date.now();\n        d.failureCount = 0;\n        d.lastUploadError = null;\n    }\n    global.set(\"eid.registry\", registry);\n    node.status({ fill: \"green\", shape: \"dot\", text: `OK ${id} (${code}, ${batch.length})` });\n    return [msg, null];\n}\n\nif (batch.length) {\n    buffers[id] = batch.concat(buffers[id] || []).slice(-maxBufferPoints);\n}\n\nif (d) {\n    d.failureCount = (d.failureCount || 0) + 1;\n    d.lastUploadError = `HTTP ${code}`;\n}\n\nconst shouldReauth = code === 401 || code === 403 || code === 404;\nif (shouldReauth && d) {\n    d.claimed = false;\n    d.webhookUrl = null;\n    d.headers = null;\n    d.helloAttempts = 0;\n    d.helloLastTriedAt = 0;\n    d.connectionRefreshedAt = null;\n    d.nextUploadAfter = 0;\n    global.set(\"eid.registry\", registry);\n    global.set(\"eid.buffers\", buffers);\n    node.warn(`${code} ${id} - re-auth queued, requeued ${batch.length}`);\n    return [null, msg];\n}\n\nif (d) {\n    const backoffS = code === 429 ? Math.max(300, Number(d.uploadInterval || 60)) : 60;\n    d.nextUploadAfter = Date.now() + backoffS * 1000;\n}\nglobal.set(\"eid.registry\", registry);\nglobal.set(\"eid.buffers\", buffers);\nnode.warn(`HTTP ${code} ${id}: ${JSON.stringify(msg.payload).slice(0,200)}; requeued ${batch.length}`);\nreturn [null, msg];",
+    "outputs": 2,
+    "x": 1160,
+    "y": 560,
+    "wires": [
+      [
+        "mqtt_bridge_debug_batch_t"
+      ],
+      [
+        "mqtt_bridge_debug_batch_t",
+        "mqtt_bridge_link_out_reauth_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_debug_batch_t",
+    "type": "debug",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_batch_t",
+    "name": "batch result",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "result",
+    "targetType": "msg",
+    "x": 1390,
+    "y": 540,
+    "wires": []
+  },
+  {
+    "id": "mqtt_bridge_link_out_reauth_t",
+    "type": "link out",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_batch_t",
+    "name": "401 -> Re-auth",
+    "mode": "link",
+    "links": [
+      "mqtt_bridge_link_in_reauth_t"
+    ],
+    "x": 1375,
+    "y": 600,
+    "wires": []
+  },
+  {
+    "id": "mqtt_bridge_inject_report_t",
+    "type": "inject",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Show registry summary",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "x": 220,
+    "y": 760,
+    "wires": [
+      [
+        "mqtt_bridge_func_report_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_func_report_t",
+    "type": "function",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Build registry summary",
+    "func": "const r = global.get(\"eid.registry\") || {};\nconst b = global.get(\"eid.buffers\")  || {};\nconst rows = Object.values(r).map(d => ({\n    deviceId:   d.deviceId,\n    type:       d.deviceType,\n    claimed:    d.claimed,\n    claimCode:  d.claimCode,\n    recordName: d.recordName || \"\",\n    recordNumber: d.recordNumber || \"\",\n    endpoint:   d.webhookUrl && d.webhookUrl.includes(\"servicebus\") ? \"servicebus\" : (d.webhookUrl ? \"webhook\" : \"\"),\n    uploadInterval: d.uploadInterval || \"\",\n    attempts:   d.helloAttempts,\n    buffered:   (b[d.deviceId] || []).length,\n    lastTopic:  d.lastTopic || \"\",\n    lastReadings: d.lastReadings || {},\n    claimUrl:   d.claimUrl || \"\"\n}));\nconst claimed   = rows.filter(x => x.claimed);\nconst unclaimed = rows.filter(x => !x.claimed);\nmsg.payload = {\n    total: rows.length,\n    claimedCount: claimed.length,\n    unclaimedCount: unclaimed.length,\n    claimed,\n    unclaimed,\n    all: rows\n};\nreturn msg;",
+    "outputs": 1,
+    "x": 520,
+    "y": 760,
+    "wires": [
+      [
+        "mqtt_bridge_debug_report_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_debug_report_t",
+    "type": "debug",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Registry",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "x": 770,
+    "y": 760,
+    "wires": []
+  },
+  {
+    "id": "mqtt_bridge_inject_unclaimed_t",
+    "type": "inject",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Export unclaimed devices (CSV)",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "x": 250,
+    "y": 830,
+    "wires": [
+      [
+        "mqtt_bridge_func_unclaimed_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_func_unclaimed_t",
+    "type": "function",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Build unclaimed CSV",
+    "func": "const r = global.get(\"eid.registry\") || {};\nconst rows = Object.values(r).filter(d => !d.claimed);\nconst header = \"deviceId,deviceType,claimCode,claimUrl\";\nconst body = rows.map(d => `${d.deviceId},${d.deviceType},${d.claimCode},${d.claimUrl||\"\"}`).join(\"\\n\");\nmsg.payload = header + \"\\n\" + body + \"\\n\";\nmsg.filename = \"mqtt-bridge-unclaimed-\" + new Date().toISOString().slice(0,10) + \".csv\";\nreturn msg;",
+    "outputs": 1,
+    "x": 530,
+    "y": 830,
+    "wires": [
+      [
+        "mqtt_bridge_debug_unclaimed_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_debug_unclaimed_t",
+    "type": "debug",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Unclaimed CSV",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "x": 790,
+    "y": 830,
+    "wires": []
+  },
+  {
+    "id": "mqtt_bridge_inject_reset_t",
+    "type": "inject",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Hard reset (registry + buffers)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "RESET",
+    "payload": "",
+    "payloadType": "date",
+    "x": 250,
+    "y": 900,
+    "wires": [
+      [
+        "mqtt_bridge_func_reset_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_func_reset_t",
+    "type": "function",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Wipe globals (DESTRUCTIVE)",
+    "func": "global.set(\"eid.registry\", {});\nglobal.set(\"eid.buffers\", {});\nmsg.payload = \"registry + buffers cleared\";\nnode.warn(\"MQTT bridge: registry and buffers wiped\");\nreturn msg;",
+    "outputs": 1,
+    "x": 560,
+    "y": 900,
+    "wires": [
+      [
+        "mqtt_bridge_debug_reset_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_debug_reset_t",
+    "type": "debug",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "reset",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "payload",
+    "statusType": "auto",
+    "x": 790,
+    "y": 900,
+    "wires": []
+  },
+  {
+    "id": "mqtt_bridge_sim_inject_t",
+    "type": "inject",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_subscribe_t",
+    "name": "TEST: simulate tele/DEVICE/SENSOR",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      },
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "tele/DEVICE001/SENSOR",
+    "payload": "{\"ENERGY\":{\"Yesterday\":0.041,\"Period\":0,\"Today\":0.004,\"Voltage\":236,\"Power\":123,\"Current\":0.5,\"Total\":1234.567},\"Time\":\"2026-01-01T00:00:00\"}",
+    "payloadType": "json",
+    "x": 240,
+    "y": 230,
+    "wires": [
+      [
+        "mqtt_bridge_func_router_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_inject_refresh_device_t",
+    "type": "inject",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Refresh device connection (payload=deviceId)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "tasmota-DEVICE",
+    "payloadType": "str",
+    "x": 250,
+    "y": 900,
+    "wires": [
+      [
+        "mqtt_bridge_func_hello_pop_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_comment_mapping_help_t",
+    "type": "comment",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_subscribe_t",
+    "name": "Metric mapping quick guide",
+    "info": "Metric mapping quick guide\n\nEdit EID_DEVICE_MAPPINGS_JSON on the tab to choose what gets sent. Leave empty to use defaults.\n\nExample:\n[{\"topic\":\"tele/+/SENSOR\",\"deviceId\":\"tasmota-${1}\",\"deviceName\":\"Tasmota ${1}\",\"deviceType\":\"tasmota\",\"channels\":[{\"key\":\"el\",\"path\":\"ENERGY.Total\",\"scale\":1},{\"key\":\"pwr\",\"path\":\"ENERGY.Power\",\"scale\":0.001}]}]\n\nStandard EnergyID keys: el, el-i, pwr, pwr-i, gas, pv, wind, chp, dh, dc, solar, ev, bat, bat-i, heat, dw.\n\nUse Show unmapped topics to find new MQTT topics or payloads that do not match a mapping.",
+    "x": 220,
+    "y": 205,
+    "wires": []
+  },
+  {
+    "id": "mqtt_bridge_inject_unmapped_t",
+    "type": "inject",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Show unmapped topics",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "x": 170,
+    "y": 940,
+    "wires": [
+      [
+        "mqtt_bridge_func_unmapped_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_func_unmapped_t",
+    "type": "function",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Build unmapped topic report",
+    "func": "const u = global.get(\"eid.unmappedTopics\") || {};\nconst rows = Object.values(u).sort((a, b) => (b.lastSeenAt || 0) - (a.lastSeenAt || 0));\nmsg.payload = {\n    total: rows.length,\n    rows\n};\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 430,
+    "y": 940,
+    "wires": [
+      [
+        "mqtt_bridge_debug_unmapped_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_debug_unmapped_t",
+    "type": "debug",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Unmapped topics",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 690,
+    "y": 940,
+    "wires": []
+  },
+  {
+    "id": "mqtt_bridge_inject_clear_unmapped_t",
+    "type": "inject",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Clear unmapped topics",
+    "props": [],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "x": 170,
+    "y": 980,
+    "wires": [
+      [
+        "mqtt_bridge_func_clear_unmapped_t"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_bridge_func_clear_unmapped_t",
+    "type": "function",
+    "z": "mqtt_bridge_tab",
+    "g": "mqtt_bridge_g_ops_t",
+    "name": "Clear unmapped topic state",
+    "func": "global.set(\"eid.unmappedTopics\", {});\nmsg.payload = \"unmapped topic list cleared\";\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 430,
+    "y": 980,
+    "wires": [
+      [
+        "mqtt_bridge_debug_unmapped_t"
+      ]
+    ]
+  }
+]

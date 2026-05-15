@@ -115,9 +115,14 @@ async def main():
 asyncio.run(main())
 ```
 
-## Demo Notebook
+## Demos
 
-See [energyid_webhook_demo.ipynb](demos/energyid_webhook_demo.ipynb) for a complete V2 API demo.
+See the [demos](demos/) folder for cURL, Python notebook, Node-RED, and Apache NiFi examples.
+
+Node-RED examples include:
+
+- [nodered_flow.json](demos/nodered_flow.json): generic incoming webhook flow.
+- [nodered_mqtt_bridge_flow.json](demos/nodered_mqtt_bridge_flow.json): MQTT-to-EnergyID bridge flow with per-device claiming, buffering, and upload policy handling.
 
 ## Development
 
