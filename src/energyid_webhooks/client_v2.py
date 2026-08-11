@@ -4,15 +4,21 @@ This module provides a client for interacting with EnergyID Webhook V2 API,
 which allows sending measurement data from sensors to EnergyID.
 """
 
+from __future__ import annotations
+
 import asyncio
 import datetime as dt
 from itertools import groupby
 import logging
+import os
 from typing import Any, TypeVar, Union, cast
+from urllib.parse import quote
 
-from aiohttp import ClientSession, ClientError
-import backoff
 import aiohttp
+from aiohttp import ClientError, ClientSession
+import backoff
+
+from .directives import DirectiveData, DirectiveResource
 
 _LOGGER = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -24,8 +30,7 @@ class Sensor:
     """Represents a sensor that collects and sends measurement data."""
 
     def __init__(self, sensor_id: str) -> None:
-        """
-        Initialize a sensor with a unique ID.
+        """Initialize a sensor with a unique ID.
 
         Args:
             sensor_id (str): The unique identifier for the sensor.
@@ -37,8 +42,7 @@ class Sensor:
         self.value_uploaded = True
 
     def __repr__(self) -> str:
-        """
-        Return a string representation of the Sensor object.
+        """Return a string representation of the Sensor object.
 
         Returns:
             str: A string describing the sensor's attributes.
@@ -46,16 +50,15 @@ class Sensor:
         return f"Sensor(sensor_id={self.sensor_id}, value={self.value}, timestamp={self.timestamp}, last_update_time={self.last_update_time}, value_uploaded={self.value_uploaded})"
 
     def update(self, value: ValueType, timestamp: dt.datetime | None = None) -> None:
-        """
-        Update the sensor's value and timestamp.
+        """Update the sensor's value and timestamp.
 
         Args:
             value (ValueType): The new value for the sensor.
             timestamp (datetime, optional): The timestamp of the update. Defaults to the current UTC time.
         """
         self.value = value
-        self.timestamp = timestamp or dt.datetime.now(dt.timezone.utc)
-        self.last_update_time = dt.datetime.now(dt.timezone.utc)
+        self.timestamp = timestamp or dt.datetime.now(dt.UTC)
+        self.last_update_time = dt.datetime.now(dt.UTC)
         self.value_uploaded = False
 
 
@@ -63,6 +66,7 @@ class WebhookClient:
     """Client for interacting with the EnergyID Webhook V2 API."""
 
     HELLO_URL = "https://hooks.energyid.eu/hello"
+    API_URL = "https://api.energyid.eu/api/v1"
 
     def __init__(
         self,
@@ -76,9 +80,10 @@ class WebhookClient:
         local_device_url: str | None = None,
         session: ClientSession | None = None,
         reauth_interval: int = 24,
+        hello_url: str | None = None,
+        api_url: str | None = None,
     ) -> None:
-        """
-        Initialize the WebhookClient with device and session details.
+        """Initialize the WebhookClient with device and session details.
 
         Args:
             provisioning_key (str): The provisioning key for the device.
@@ -91,6 +96,8 @@ class WebhookClient:
             local_device_url (str, optional): The local URL of the device. Defaults to None.
             session (ClientSession, optional): An existing aiohttp session. Defaults to None.
             reauth_interval (int, optional): The interval in hours for re-authentication. Defaults to 24.
+            hello_url (str, optional): Override the provisioning URL for self-hosted or test deployments.
+            api_url (str, optional): Override the EnergyID API URL for self-hosted or test deployments.
         """
         self.provisioning_key = provisioning_key
         self.provisioning_secret = provisioning_secret
@@ -100,6 +107,12 @@ class WebhookClient:
         self.ip_address = ip_address
         self.mac_address = mac_address
         self.local_device_url = local_device_url
+        self.hello_url = hello_url or os.environ.get(
+            "ENERGYID_HELLO_URL", self.HELLO_URL
+        )
+        self.api_url = (
+            api_url or os.environ.get("ENERGYID_API_URL", self.API_URL)
+        ).rstrip("/")
 
         self._own_session = session is None
         self.session = session or ClientSession()
@@ -109,11 +122,16 @@ class WebhookClient:
         self.headers: dict[str, str] | None = None
         self.recordNumber: str | None = None
         self.recordName: str | None = None
+        self.api_access_token: str | None = None
         self.webhook_policy: dict[str, Any] | None = None
         self.uploadInterval: int = 60
         self.auth_valid_until: dt.datetime | None = None
         self.claim_code: str | None = None
         self.claim_url: str | None = None
+        # None until the first directive call has probed which route shape the
+        # backend serves; True pins the legacy record-scoped routes for this
+        # client instance, False pins the token-scoped routes.
+        self._directives_use_legacy_routes: bool | None = None
         self.claim_code_valid_until: dt.datetime | None = None
         self.reauth_interval: int = reauth_interval
 
@@ -123,9 +141,8 @@ class WebhookClient:
         self._upload_lock = asyncio.Lock()
         self._auto_sync_task: asyncio.Task[None] | None = None
 
-    async def __aenter__(self) -> "WebhookClient":
-        """
-        Enter the asynchronous context manager.
+    async def __aenter__(self) -> WebhookClient:
+        """Enter the asynchronous context manager.
 
         Returns:
             WebhookClient: The current instance of the WebhookClient.
@@ -133,8 +150,7 @@ class WebhookClient:
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """
-        Exit the asynchronous context manager and close the client.
+        """Exit the asynchronous context manager and close the client.
 
         Args:
             exc_type (Any): The exception type, if any.
@@ -145,8 +161,7 @@ class WebhookClient:
 
     @property
     def updated_sensors(self) -> list[Sensor]:
-        """
-        Get a list of sensors with unsynchronized data.
+        """Get a list of sensors with unsynchronized data.
 
         Returns:
             list[Sensor]: A list of sensors that have not uploaded their values.
@@ -154,8 +169,7 @@ class WebhookClient:
         return [sensor for sensor in self.sensors if not sensor.value_uploaded]
 
     def get_sensor(self, sensor_id: str) -> Sensor | None:
-        """
-        Retrieve a sensor by its ID.
+        """Retrieve a sensor by its ID.
 
         Args:
             sensor_id (str): The unique identifier of the sensor.
@@ -169,8 +183,7 @@ class WebhookClient:
         return None
 
     def create_sensor(self, sensor_id: str) -> Sensor:
-        """
-        Create a new sensor and add it to the client.
+        """Create a new sensor and add it to the client.
 
         Args:
             sensor_id (str): The unique identifier for the new sensor.
@@ -185,8 +198,7 @@ class WebhookClient:
     async def update_sensor(
         self, sensor_id: str, value: ValueType, timestamp: dt.datetime | None = None
     ) -> None:
-        """
-        Update a sensor's value and timestamp.
+        """Update a sensor's value and timestamp.
 
         Args:
             sensor_id (str): The unique identifier of the sensor.
@@ -198,8 +210,7 @@ class WebhookClient:
             sensor.update(value, timestamp)
 
     def get_or_create_sensor(self, sensor_id: str) -> Sensor:
-        """
-        Retrieve a sensor by its ID or create it if it does not exist.
+        """Retrieve a sensor by its ID or create it if it does not exist.
 
         Args:
             sensor_id (str): The unique identifier of the sensor.
@@ -213,8 +224,7 @@ class WebhookClient:
         return sensor
 
     async def close(self) -> None:
-        """
-        Close the WebhookClient and release resources.
+        """Close the WebhookClient and release resources.
         """
         if self._auto_sync_task is not None:
             self._auto_sync_task.cancel()
@@ -229,8 +239,7 @@ class WebhookClient:
             self.session = cast(ClientSession, None)
 
     async def authenticate(self) -> bool:
-        """
-        Authenticate the client and retrieve webhook details.
+        """Authenticate the client and retrieve webhook details.
 
         Returns:
             bool: True if the client is successfully authenticated, otherwise False.
@@ -255,7 +264,7 @@ class WebhookClient:
         }
 
         async with self.session.post(
-            self.HELLO_URL, json=payload, headers=headers
+            self.hello_url, json=payload, headers=headers
         ) as response:
             response.raise_for_status()
             data = await response.json()
@@ -272,24 +281,109 @@ class WebhookClient:
 
                 self.recordNumber = data.get("recordNumber", None)
                 self.recordName = data.get("recordName", None)
+                self.api_access_token = data.get("apiAccessToken")
+                self.api_url = data.get("apiUrl", self.api_url).rstrip("/")
 
-                self.auth_valid_until = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
+                self.auth_valid_until = dt.datetime.now(dt.UTC) + dt.timedelta(
                     hours=self.reauth_interval
                 )
                 _LOGGER.info("Webhook policy attributes set: %s", self.webhook_policy)
                 return True
-            else:
-                self.is_claimed = False
-                self.claim_code = data["claimCode"]
-                self.claim_url = data["claimUrl"]
-                self.claim_code_valid_until = dt.datetime.fromtimestamp(
-                    int(data["exp"]), tz=dt.timezone.utc
+            self.is_claimed = False
+            self.claim_code = data["claimCode"]
+            self.claim_url = data["claimUrl"]
+            self.claim_code_valid_until = dt.datetime.fromtimestamp(
+                int(data["exp"]), tz=dt.UTC
+            )
+            return False
+
+    async def get_directives(self) -> list[DirectiveResource]:
+        """Return directives available to the linked record-bound device."""
+        if not self.api_access_token:
+            # Access can be granted to an existing connection without reconnecting.
+            await self.authenticate()
+        if not await self._ensure_authenticated():
+            return []
+        if not self.api_access_token or not self.recordNumber:
+            return []
+
+        data = await self._get_directive_json(
+            "directives",
+            f"records/{quote(self.recordNumber, safe='')}/directives",
+        )
+        if not isinstance(data, list):
+            raise ValueError("Expected a list of directives")
+        return [DirectiveResource.from_dict(item) for item in data]
+
+    async def get_directive_data(self, directive_id: str) -> DirectiveData:
+        """Return the schedule for one directive."""
+        if not await self._ensure_authenticated():
+            raise PermissionError("The device is not authenticated")
+        if not self.api_access_token or not self.recordNumber:
+            raise PermissionError("Directive access is not enabled for this device")
+
+        data = await self._get_directive_json(
+            f"directives/{quote(directive_id, safe='')}",
+            f"records/{quote(self.recordNumber, safe='')}/directives/"
+            f"{quote(directive_id, safe='')}",
+        )
+        if not isinstance(data, dict):
+            raise ValueError("Expected directive data")
+        return DirectiveData.from_dict(data)
+
+
+    async def _get_directive_json(
+        self, token_scoped_path: str, legacy_path: str
+    ) -> Any:
+        """Fetch a directive resource, preferring the token-scoped routes.
+
+        The device apiAccessToken already identifies the integration and
+        record, so the directive endpoints are moving to token-scoped routes
+        without the record number in the path (EnergyID Hooks project). Try
+        those first and fall back to the legacy record-scoped routes while
+        deployments still serve only the old shape. The detected shape is
+        remembered for the lifetime of this client instance.
+        """
+        if self._directives_use_legacy_routes:
+            return await self._get_device_api_json(legacy_path)
+        try:
+            data = await self._get_device_api_json(token_scoped_path)
+        except aiohttp.ClientResponseError as err:
+            if self._directives_use_legacy_routes is False or err.status not in (
+                404,
+                405,
+            ):
+                raise
+            data = await self._get_device_api_json(legacy_path)
+            self._directives_use_legacy_routes = True
+            return data
+        self._directives_use_legacy_routes = False
+        return data
+
+    async def _get_device_api_json(
+        self, path: str, *, retry_on_unauthorized: bool = True
+    ) -> Any:
+        """Call a record-scoped EnergyID endpoint with one token refresh retry."""
+        if not self.api_access_token:
+            raise PermissionError("Directive access is not enabled for this device")
+
+        headers = {"Authorization": f"device {self.api_access_token}"}
+        async with self.session.get(
+            f"{self.api_url}/{path}", headers=headers
+        ) as response:
+            if response.status == 401 and retry_on_unauthorized:
+                self.auth_valid_until = dt.datetime.now(dt.UTC) - dt.timedelta(
+                    seconds=1
                 )
-                return False
+                await self.authenticate()
+                return await self._get_device_api_json(
+                    path, retry_on_unauthorized=False
+                )
+            response.raise_for_status()
+            return await response.json()
 
     def get_claim_info(self) -> dict[str, Any]:
-        """
-        Retrieve claim information if the device is not yet claimed.
+        """Retrieve claim information if the device is not yet claimed.
 
         Returns:
             dict[str, Any]: A dictionary containing claim information or status.
@@ -315,8 +409,7 @@ class WebhookClient:
         }
 
     async def _ensure_authenticated(self) -> bool:
-        """
-        Ensure the client is authenticated and refresh tokens if needed.
+        """Ensure the client is authenticated and refresh tokens if needed.
 
         Returns:
             bool: True if the client is authenticated, otherwise False.
@@ -332,7 +425,7 @@ class WebhookClient:
         if not self.is_claimed:
             return False
 
-        now = dt.datetime.now(dt.timezone.utc)
+        now = dt.datetime.now(dt.UTC)
         should_reauth = False
 
         if self.auth_valid_until is None:
@@ -362,8 +455,7 @@ class WebhookClient:
     async def send_data(
         self, data_points: dict[str, Any], timestamp: dt.datetime | int | None = None
     ) -> None:
-        """
-        Send measurement data to the webhook endpoint.
+        """Send measurement data to the webhook endpoint.
 
         Args:
             data_points (dict[str, Any]): A dictionary of sensor data points.
@@ -388,7 +480,7 @@ class WebhookClient:
                 else timestamp
             )
         elif "ts" not in payload:
-            payload["ts"] = int(dt.datetime.now(dt.timezone.utc).timestamp())
+            payload["ts"] = int(dt.datetime.now(dt.UTC).timestamp())
 
         _LOGGER.debug("Attempting to send data to %s", self.webhook_url)
 
@@ -413,23 +505,21 @@ class WebhookClient:
                 _LOGGER.warning(
                     "Received 401 Unauthorized sending data. Marking token as potentially expired."
                 )
-                self.auth_valid_until = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
+                self.auth_valid_until = dt.datetime.now(dt.UTC) - dt.timedelta(
                     seconds=1
                 )
                 raise err
-            else:
-                raise err
+            raise err
 
     async def synchronize_sensors(self) -> None:
-        """
-        Synchronize updated sensor data with the webhook endpoint.
+        """Synchronize updated sensor data with the webhook endpoint.
 
         Raises:
             Exception: If data synchronization fails.
         """
         updated = self.updated_sensors
         if not updated:
-            return None
+            return
 
         async with self._upload_lock:
 
@@ -437,13 +527,12 @@ class WebhookClient:
                 if sensor.timestamp:
                     if isinstance(sensor.timestamp, dt.datetime):
                         return int(sensor.timestamp.timestamp())
-                    else:
-                        _LOGGER.warning(
-                            "Sensor %s has non-datetime timestamp: %s",
-                            sensor.sensor_id,
-                            sensor.timestamp,
-                        )
-                        return None
+                    _LOGGER.warning(
+                        "Sensor %s has non-datetime timestamp: %s",
+                        sensor.sensor_id,
+                        sensor.timestamp,
+                    )
+                    return None
                 _LOGGER.warning(
                     "Sensor object or its timestamp is None during sync grouping: %s",
                     sensor,
@@ -471,7 +560,7 @@ class WebhookClient:
                     await self.send_data(data_points, timestamp_key)
                     for sensor in sensors_in_group:
                         sensor.value_uploaded = True
-                    self.last_sync_time = dt.datetime.now(dt.timezone.utc)
+                    self.last_sync_time = dt.datetime.now(dt.UTC)
                 except Exception as e:
                     _LOGGER.error(
                         "Failed to send data batch for timestamp %s: %s",
@@ -481,8 +570,7 @@ class WebhookClient:
                     raise
 
     async def _auto_sync_loop(self, interval: int) -> None:
-        """
-        Continuously synchronize sensors at a specified interval.
+        """Continuously synchronize sensors at a specified interval.
 
         Args:
             interval (int): The interval in seconds between synchronizations.
@@ -496,8 +584,7 @@ class WebhookClient:
             await asyncio.sleep(interval)
 
     def start_auto_sync(self, interval_seconds: int) -> None:
-        """
-        Start the automatic synchronization loop.
+        """Start the automatic synchronization loop.
 
         Args:
             interval_seconds (int): The interval in seconds for automatic synchronization.
