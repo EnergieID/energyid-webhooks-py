@@ -107,12 +107,12 @@ class WebhookClient:
         self.ip_address = ip_address
         self.mac_address = mac_address
         self.local_device_url = local_device_url
-        self.hello_url = hello_url or os.environ.get(
-            "ENERGYID_HELLO_URL", self.HELLO_URL
+        resolved_hello_url = (
+            hello_url or os.environ.get("ENERGYID_HELLO_URL") or self.HELLO_URL
         )
-        self.api_url = (
-            api_url or os.environ.get("ENERGYID_API_URL", self.API_URL)
-        ).rstrip("/")
+        resolved_api_url = api_url or os.environ.get("ENERGYID_API_URL") or self.API_URL
+        self.hello_url = resolved_hello_url
+        self.api_url = resolved_api_url.rstrip("/")
 
         self._own_session = session is None
         self.session = session or ClientSession()
@@ -224,8 +224,7 @@ class WebhookClient:
         return sensor
 
     async def close(self) -> None:
-        """Close the WebhookClient and release resources.
-        """
+        """Close the WebhookClient and release resources."""
         if self._auto_sync_task is not None:
             self._auto_sync_task.cancel()
             try:
@@ -330,7 +329,6 @@ class WebhookClient:
         if not isinstance(data, dict):
             raise ValueError("Expected directive data")
         return DirectiveData.from_dict(data)
-
 
     async def _get_directive_json(
         self, token_scoped_path: str, legacy_path: str
@@ -540,7 +538,8 @@ class WebhookClient:
                 return None
 
             grouped_sensors = groupby(
-                sorted(updated, key=lambda s: get_timestamp_key(s) or 0), key=get_timestamp_key
+                sorted(updated, key=lambda s: get_timestamp_key(s) or 0),
+                key=get_timestamp_key,
             )
 
             for timestamp_key, sensor_iter in grouped_sensors:
