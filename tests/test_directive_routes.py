@@ -35,7 +35,9 @@ async def test_token_scoped_route_preferred() -> None:
     """The recordless route is used and pinned when the backend serves it."""
     client, calls = _client_with_routes({"directives": []})
 
-    assert await client._get_directive_json("directives", "records/EA-1/directives") == []
+    assert (
+        await client._get_directive_json("directives", "records/EA-1/directives") == []
+    )
     assert client._directives_use_legacy_routes is False
 
     await client._get_directive_json("directives", "records/EA-1/directives")
