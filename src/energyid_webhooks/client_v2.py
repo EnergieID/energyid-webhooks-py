@@ -66,7 +66,6 @@ class WebhookClient:
     """Client for interacting with the EnergyID Webhook V2 API."""
 
     HELLO_URL = "https://hooks.energyid.eu/hello"
-    API_URL = "https://api.energyid.eu/api/v1"
 
     def __init__(
         self,
@@ -81,7 +80,6 @@ class WebhookClient:
         session: ClientSession | None = None,
         reauth_interval: int = 24,
         hello_url: str | None = None,
-        api_url: str | None = None,
     ) -> None:
         """Initialize the WebhookClient with device and session details.
 
@@ -97,7 +95,6 @@ class WebhookClient:
             session (ClientSession, optional): An existing aiohttp session. Defaults to None.
             reauth_interval (int, optional): The interval in hours for re-authentication. Defaults to 24.
             hello_url (str, optional): Override the provisioning URL for self-hosted or test deployments.
-            api_url (str, optional): Override the EnergyID API URL for self-hosted or test deployments.
         """
         self.provisioning_key = provisioning_key
         self.provisioning_secret = provisioning_secret
@@ -110,9 +107,10 @@ class WebhookClient:
         resolved_hello_url = (
             hello_url or os.environ.get("ENERGYID_HELLO_URL") or self.HELLO_URL
         )
-        resolved_api_url = api_url or os.environ.get("ENERGYID_API_URL") or self.API_URL
         self.hello_url = resolved_hello_url
-        self.api_url = resolved_api_url.rstrip("/")
+        # The directive endpoints are served by the same EnergyID Hooks host
+        # that serves /hello, so their base follows any hello_url override.
+        self.hooks_base_url = resolved_hello_url.rstrip("/").removesuffix("/hello")
 
         self._own_session = session is None
         self.session = session or ClientSession()
@@ -128,10 +126,6 @@ class WebhookClient:
         self.auth_valid_until: dt.datetime | None = None
         self.claim_code: str | None = None
         self.claim_url: str | None = None
-        # None until the first directive call has probed which route shape the
-        # backend serves; True pins the legacy record-scoped routes for this
-        # client instance, False pins the token-scoped routes.
-        self._directives_use_legacy_routes: bool | None = None
         self.claim_code_valid_until: dt.datetime | None = None
         self.reauth_interval: int = reauth_interval
 
@@ -281,7 +275,6 @@ class WebhookClient:
                 self.recordNumber = data.get("recordNumber", None)
                 self.recordName = data.get("recordName", None)
                 self.api_access_token = data.get("apiAccessToken")
-                self.api_url = data.get("apiUrl", self.api_url).rstrip("/")
 
                 self.auth_valid_until = dt.datetime.now(dt.UTC) + dt.timedelta(
                     hours=self.reauth_interval
@@ -306,10 +299,7 @@ class WebhookClient:
         if not self.api_access_token or not self.recordNumber:
             return []
 
-        data = await self._get_directive_json(
-            "directives",
-            f"records/{quote(self.recordNumber, safe='')}/directives",
-        )
+        data = await self._get_device_api_json("directives")
         if not isinstance(data, list):
             raise ValueError("Expected a list of directives")
         return [DirectiveResource.from_dict(item) for item in data]
@@ -321,53 +311,23 @@ class WebhookClient:
         if not self.api_access_token or not self.recordNumber:
             raise PermissionError("Directive access is not enabled for this device")
 
-        data = await self._get_directive_json(
-            f"directives/{quote(directive_id, safe='')}",
-            f"records/{quote(self.recordNumber, safe='')}/directives/"
-            f"{quote(directive_id, safe='')}",
+        data = await self._get_device_api_json(
+            f"directives/{quote(directive_id, safe='')}"
         )
         if not isinstance(data, dict):
             raise ValueError("Expected directive data")
         return DirectiveData.from_dict(data)
 
-    async def _get_directive_json(
-        self, token_scoped_path: str, legacy_path: str
-    ) -> Any:
-        """Fetch a directive resource, preferring the token-scoped routes.
-
-        The device apiAccessToken already identifies the integration and
-        record, so the directive endpoints are moving to token-scoped routes
-        without the record number in the path (EnergyID Hooks project). Try
-        those first and fall back to the legacy record-scoped routes while
-        deployments still serve only the old shape. The detected shape is
-        remembered for the lifetime of this client instance.
-        """
-        if self._directives_use_legacy_routes:
-            return await self._get_device_api_json(legacy_path)
-        try:
-            data = await self._get_device_api_json(token_scoped_path)
-        except aiohttp.ClientResponseError as err:
-            if self._directives_use_legacy_routes is False or err.status not in (
-                404,
-                405,
-            ):
-                raise
-            data = await self._get_device_api_json(legacy_path)
-            self._directives_use_legacy_routes = True
-            return data
-        self._directives_use_legacy_routes = False
-        return data
-
     async def _get_device_api_json(
         self, path: str, *, retry_on_unauthorized: bool = True
     ) -> Any:
-        """Call a record-scoped EnergyID endpoint with one token refresh retry."""
+        """Call a token-scoped EnergyID Hooks endpoint with one token refresh retry."""
         if not self.api_access_token:
             raise PermissionError("Directive access is not enabled for this device")
 
         headers = {"Authorization": f"device {self.api_access_token}"}
         async with self.session.get(
-            f"{self.api_url}/{path}", headers=headers
+            f"{self.hooks_base_url}/{path}", headers=headers
         ) as response:
             if response.status == 401 and retry_on_unauthorized:
                 self.auth_valid_until = dt.datetime.now(dt.UTC) - dt.timedelta(
