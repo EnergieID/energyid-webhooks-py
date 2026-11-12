@@ -64,6 +64,10 @@ async def main():
 asyncio.run(main())
 ```
 
+### Refused credentials
+
+`authenticate()` raises `EnergyIDAuthenticationError` when EnergyID refuses the provisioning key and secret (HTTP 401) or the linked record is closed (HTTP 403). The client also signs in again by itself (before its token expires, and after a directive request is rejected), so `send_data()`, `synchronize_sensors()`, `get_directives()` and `get_directive_data()` can raise it too. Ask the user for new credentials; retrying does not help. `start_auto_sync()` only logs errors, so call `synchronize_sensors()` yourself if you need to react to this one. The error subclasses `aiohttp.ClientResponseError`, so existing handlers keep working.
+
 ## V1 API Usage (Legacy)
 
 The original API is still available for backward compatibility:

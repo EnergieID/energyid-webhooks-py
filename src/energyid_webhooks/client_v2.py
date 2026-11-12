@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+from http import HTTPStatus
 from itertools import groupby
 import logging
 import os
@@ -19,6 +20,7 @@ from aiohttp import ClientError, ClientSession
 import backoff
 
 from .directives import DirectiveData, DirectiveResource
+from .exceptions import EnergyIDAuthenticationError
 
 _LOGGER = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -236,6 +238,9 @@ class WebhookClient:
 
         Returns:
             bool: True if the client is successfully authenticated, otherwise False.
+
+        Raises:
+            EnergyIDAuthenticationError: If EnergyID refuses the provisioning credentials.
         """
         payload: dict[str, Any] = {
             "deviceId": self.device_id,
@@ -259,6 +264,14 @@ class WebhookClient:
         async with self.session.post(
             self.hello_url, json=payload, headers=headers
         ) as response:
+            if response.status in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+                raise EnergyIDAuthenticationError(
+                    response.request_info,
+                    response.history,
+                    status=response.status,
+                    message=response.reason or "",
+                    headers=response.headers,
+                )
             response.raise_for_status()
             data = await response.json()
 
@@ -408,7 +421,11 @@ class WebhookClient:
         return bool(self.is_claimed)
 
     @backoff.on_exception(
-        backoff.expo, (ClientError, TimeoutError), max_tries=3, max_time=60
+        backoff.expo,
+        (ClientError, TimeoutError),
+        max_tries=3,
+        max_time=60,
+        giveup=lambda err: isinstance(err, EnergyIDAuthenticationError),
     )
     async def send_data(
         self, data_points: dict[str, Any], timestamp: dt.datetime | int | None = None
