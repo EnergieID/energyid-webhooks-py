@@ -11,6 +11,7 @@ from .directives import (
     DirectiveData,
     DirectiveResource,
     DirectiveSignal,
+    DirectiveState,
     SignalProvider,
 )
 from .exceptions import EnergyIDAuthenticationError
@@ -26,6 +27,7 @@ __all__ = [
     "DirectiveData",
     "DirectiveResource",
     "DirectiveSignal",
+    "DirectiveState",
     "EnergyIDAuthenticationError",
     "Sensor",  # V2 sensor class
     "SignalProvider",

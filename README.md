@@ -68,6 +68,22 @@ asyncio.run(main())
 
 `authenticate()` raises `EnergyIDAuthenticationError` when EnergyID refuses the provisioning key and secret (HTTP 401) or the linked record is closed (HTTP 403). The client also signs in again by itself (before its token expires, and after a directive request is rejected), so `send_data()`, `synchronize_sensors()`, `get_directives()` and `get_directive_data()` can raise it too. Ask the user for new credentials; retrying does not help. `start_auto_sync()` only logs errors, so call `synchronize_sensors()` yourself if you need to react to this one. The error subclasses `aiohttp.ClientResponseError`, so existing handlers keep working.
 
+### Directives
+
+A device whose record was granted directive access can read the directive schedules:
+
+```python
+import datetime as dt
+
+directives = await client.get_directives()
+for directive in directives:
+    schedule = await client.get_directive_data(directive.id)
+    state = schedule.state_at(dt.datetime.now(dt.UTC))
+    print(directive.title, state.current, state.next_change, state.next_signal)
+```
+
+Each point in a schedule starts a slot that lasts one `interval`. Day and week slots (`P1D`, `P7D`) follow the local calendar: on the day the clocks change, a slot still runs until the next point when that point starts at the same local time. When the interval has no fixed length (`P1M`, `P1Y`), a slot lasts until the next point, and the last one never ends. `state_at()` returns the active point (`None` outside every slot), the next time the signal value changes, and the point that starts then (`None` when the change is to no signal: a gap or the end of the last slot). `signal_at()` returns only the active point. Both need a timezone-aware moment.
+
 ## V1 API Usage (Legacy)
 
 The original API is still available for backward compatibility:
