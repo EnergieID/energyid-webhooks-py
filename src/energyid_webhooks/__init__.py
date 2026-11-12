@@ -13,6 +13,7 @@ from .directives import (
     DirectiveSignal,
     SignalProvider,
 )
+from .exceptions import EnergyIDAuthenticationError
 from .payload import WebhookPayload
 
 try:
@@ -25,6 +26,7 @@ __all__ = [
     "DirectiveData",
     "DirectiveResource",
     "DirectiveSignal",
+    "EnergyIDAuthenticationError",
     "Sensor",  # V2 sensor class
     "SignalProvider",
     "WebhookClient",  # V2 client is the default
