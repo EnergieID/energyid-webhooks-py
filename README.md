@@ -30,8 +30,8 @@ from energyid_webhooks import WebhookClient
 
 # Create the client
 client = WebhookClient(
-    client_id="your_provisioning_key",
-    client_secret="your_provisioning_secret",
+    provisioning_key="your_provisioning_key",
+    provisioning_secret="your_provisioning_secret",
     device_id="unique_device_id",
     device_name="My Device",
     reauth_interval=24  # Hours between token refresh
@@ -49,8 +49,8 @@ async def main():
         return
 
     # Add and update sensors
-    client.update_sensor("el", 1250.5)  # Electricity consumption
-    client.update_sensor("pv", 3560.2)  # Solar production
+    await client.update_sensor("el", 1250.5)  # Electricity consumption
+    await client.update_sensor("pv", 3560.2)  # Solar production
 
     # Synchronize with EnergyID
     await client.synchronize_sensors()
